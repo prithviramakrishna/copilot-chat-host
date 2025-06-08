@@ -1,232 +1,84 @@
+
+HomeHTMLTry HTML 
+Result Size: 1250 x 917
+-
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <title>Copilot Assistant</title>
-  <style>
-    html, body {
-      margin: 0;
-      height: 100%;
-      font-family: Segoe UI, sans-serif;
-    }
-
-    #chat-toggle {
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      background-color: #0078d4;
-      color: white;
-      border: none;
-      border-radius: 50%;
-      width: 60px;
-      height: 60px;
-      font-size: 30px;
-      cursor: pointer;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-      z-index: 1000;
-    }
-
-    #chat-container {
-      position: fixed;
-      top: 100px;
-      left: calc(100% - 420px);
-      width: 400px;
-      height: 600px;
-      background: white;
-      border-radius: 10px;
-      display: none;
-      flex-direction: column;
-      overflow: hidden;
-      box-shadow: 0 2px 15px rgba(0, 0, 0, 0.3);
-      z-index: 999;
-      transition: all 0.3s ease;
-    }
-
-    #chat-container.minimized {
-      opacity: 0;
-      pointer-events: none;
-      transform: scale(0.95);
-    }
-
-    #chat-header {
-      background-color: #0078d4;
-      color: white;
-      padding: 10px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      cursor: move;
-      user-select: none;
-    }
-
-    #chat-header button {
-      background: transparent;
-      border: none;
-      color: white;
-      font-size: 16px;
-      cursor: pointer;
-    }
-
-    #webchat {
-      flex: 1;
-      overflow: auto;
-    }
-  </style>
-</head>
-<body>
-
-  <button id="chat-toggle">💬</button>
-
-  <div id="chat-container">
-    <div id="chat-header">
-      <span>Copilot Assistant</span>
-      <div>
-        <button id="minimize-chat">—</button>
-        <button id="close-chat">×</button>
-      </div>
+  <head>
+    <title>Copilot Chat</title>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        font-family: Segoe UI, sans-serif;
+      }
+​
+      #chat-container {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        background: #ffffff;
+      }
+​
+      #webchat {
+        flex: 1;
+        overflow: hidden;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="chat-container">
+      <div id="webchat"></div>
     </div>
-    <div id="webchat"></div>
-  </div>
-
-  <script src="https://cdn.botframework.com/botframework-webchat/latest/webchat.js"></script>
-
-  <script>
-    const chatToggle = document.getElementById('chat-toggle');
-    const chatContainer = document.getElementById('chat-container');
-    const closeChat = document.getElementById('close-chat');
-    const minimizeChat = document.getElementById('minimize-chat');
-    let webchatDiv = document.getElementById('webchat');
-    let directLine = null;
-    let connectionSub = null;
-
-    const defaultChatTop = 100;
-    const defaultChatLeft = window.innerWidth - 420;
-
-    async function getDirectLineTokenAndUrl() {
-      const tokenEndpoint = 'https://292d760cb79fe74db3cfbeb6da7b7d.0a.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview';
-      const response = await fetch(tokenEndpoint);
-      const { token } = await response.json();
-
-      const settingsRes = await fetch('https://292d760cb79fe74db3cfbeb6da7b7d.0a.environment.api.powerplatform.com/powervirtualagents/regionalchannelsettings?api-version=2022-03-01-preview');
-      const { channelUrlsById: { directline } } = await settingsRes.json();
-
-      return { token, domain: new URL('v3/directline', directline).toString() };
-    }
-
-    async function startWebChat() {
-      if (directLine && directLine.end) {
-        directLine.end();
-        directLine = null;
+​
+    <script src="https://cdn.botframework.com/botframework-webchat/latest/webchat.js"></script>
+    <script>
+      async function getDirectLineTokenAndUrl() {
+        const tokenEndpoint = 'https://292d760cb79fe74db3cfbeb6da7b7d.0a.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview';
+        const response = await fetch(tokenEndpoint);
+        const { token } = await response.json();
+​
+        const settingsRes = await fetch('https://292d760cb79fe74db3cfbeb6da7b7d.0a.environment.api.powerplatform.com/powervirtualagents/regionalchannelsettings?api-version=2022-03-01-preview');
+        const { channelUrlsById: { directline } } = await settingsRes.json();
+​
+        return { token, domain: new URL('v3/directline', directline).toString() };
       }
-      if (connectionSub) {
-        connectionSub.unsubscribe();
-        connectionSub = null;
+​
+      async function startWebChat() {
+        const webchatDiv = document.getElementById('webchat');
+        const { token, domain } = await getDirectLineTokenAndUrl();
+        const directLine = WebChat.createDirectLine({ token, domain });
+        const locale = document.documentElement.lang || 'en';
+​
+        WebChat.renderWebChat({
+          directLine,
+          locale,
+          styleOptions: {
+            hideUploadButton: true
+          }
+        }, webchatDiv);
+​
+        directLine.connectionStatus$.subscribe(status => {
+          if (status === 2) {
+            directLine.postActivity({
+              type: 'event',
+              name: 'startConversation',
+              from: { id: 'user1' },
+              value: {
+                localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                locale,
+                userName: 'John Doe',
+                userId: Date.now().toString(),
+                currentUrl: window.location.href
+              }
+            }).subscribe();
+          }
+        });
       }
-
-      const { token, domain } = await getDirectLineTokenAndUrl();
-      directLine = WebChat.createDirectLine({ token, domain });
-      const locale = document.documentElement.lang || 'en';
-
-      WebChat.renderWebChat({
-        directLine,
-        locale,
-        styleOptions: {
-          hideUploadButton: true
-        }
-      }, webchatDiv);
-
-      connectionSub = directLine.connectionStatus$.subscribe(status => {
-        if (status === 2) {
-          directLine.postActivity({
-            type: 'event',
-            name: 'startConversation',
-            from: { id: 'user1' },
-            value: {
-              locale,
-              contextKey1: window.location.href
-            }
-          }).subscribe();
-        }
-      });
-    }
-
-    chatToggle.onclick = () => {
-      chatContainer.style.display = 'flex';
-      chatContainer.classList.remove('minimized');
-
-      // Reset position to default
-      chatContainer.style.top = `${defaultChatTop}px`;
-      chatContainer.style.left = `${defaultChatLeft}px`;
-      chatContainer.style.right = 'auto';
-      chatContainer.style.bottom = 'auto';
-
-      if (!directLine) {
-        startWebChat();
-      }
-    };
-
-    minimizeChat.onclick = () => {
-      chatContainer.classList.add('minimized');
-    };
-
-    closeChat.onclick = async () => {
-      // Remove old webchat div
-      if (webchatDiv) {
-        webchatDiv.remove();
-      }
-
-      // Create new one
-      const newWebchatDiv = document.createElement('div');
-      newWebchatDiv.id = 'webchat';
-      document.getElementById('chat-container').appendChild(newWebchatDiv);
-      webchatDiv = newWebchatDiv;
-
-      // End previous session
-      if (directLine && directLine.end) {
-        try {
-          directLine.end();
-        } catch (e) {
-          console.warn("Error ending directLine", e);
-        }
-        directLine = null;
-      }
-
-      if (connectionSub) {
-        connectionSub.unsubscribe();
-        connectionSub = null;
-      }
-
-      await startWebChat();
-      chatContainer.style.display = 'flex';
-      chatContainer.classList.remove('minimized');
-    };
-
-    // DRAGGABLE CHAT
-    let isDragging = false;
-    let offsetX, offsetY;
-
-    const header = document.getElementById('chat-header');
-
-    header.addEventListener('mousedown', (e) => {
-      isDragging = true;
-      const rect = chatContainer.getBoundingClientRect();
-      offsetX = e.clientX - rect.left;
-      offsetY = e.clientY - rect.top;
-      document.body.style.userSelect = 'none';
-    });
-
-    document.addEventListener('mousemove', (e) => {
-      if (isDragging) {
-        chatContainer.style.left = (e.clientX - offsetX) + 'px';
-        chatContainer.style.top = (e.clientY - offsetY) + 'px';
-        chatContainer.style.right = 'auto';
-        chatContainer.style.bottom = 'auto';
-      }
-    });
-
-    document.addEventListener('mouseup', () => {
-      isDragging = false;
-      document.body.style.userSelect = 'auto';
-    });
-  </script>
-</body>
+​
+      startWebChat();
+    </script>
+  </body>
 </html>
