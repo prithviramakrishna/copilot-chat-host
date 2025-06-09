@@ -47,7 +47,6 @@
         const { token, domain } = await getDirectLineTokenAndUrl();
         const directLine = WebChat.createDirectLine({ token, domain });
         const locale = document.documentElement.lang || 'en';
-        const incidentId = params.get('incidentId');
 
         WebChat.renderWebChat({
           directLine,
@@ -69,7 +68,6 @@
                 userName: 'John Doe',
                 userId: Date.now().toString(),
                 currentUrl: window.location.href,
-                incidentId: incidentId
               }
             }).subscribe();
           }
