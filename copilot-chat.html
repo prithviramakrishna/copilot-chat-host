@@ -42,6 +42,10 @@
         return { token, domain: new URL('v3/directline', directline).toString() };
       }
 
+      function getIncidentId() {
+        return sessionStorage.getItem("incidentId") || "unknown";
+      }
+
       async function startWebChat() {
         const webchatDiv = document.getElementById('webchat');
         const { token, domain } = await getDirectLineTokenAndUrl();
@@ -68,11 +72,13 @@
                 userName: 'John Doe',
                 userId: Date.now().toString(),
                 currentUrl: window.location.href,
+                incidentId: getIncidentId()
               }
             }).subscribe();
           }
         });
       }
+
       startWebChat();
     </script>
   </body>
