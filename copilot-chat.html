@@ -32,6 +32,7 @@
     <script src="https://cdn.botframework.com/botframework-webchat/latest/webchat.js"></script>
     <script>
       let directLine;
+      let recordContext = null;
 
       async function getDirectLineTokenAndUrl() {
         const tokenEndpoint = 'https://292d760cb79fe74db3cfbeb6da7b7d.0a.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview';
@@ -59,46 +60,53 @@
             }
           }, webchatDiv);
 
+          // When connection is open, send startConversation + context
+          directLine.connectionStatus$.subscribe(status => {
+            if (status === 2) {
+              const payload = {
+                locale: 'en',
+                localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                ...recordContext // Merges in recordId, objectType, etc.
+              };
+
+              directLine.postActivity({
+                type: 'event',
+                name: 'startConversation',
+                from: { id: 'user1' },
+                value: payload
+              }).subscribe(
+                id => console.log("✅ Bot started with record context:", payload),
+                err => console.error("❌ Failed to start conversation:", err)
+              );
+            }
+          });
+
           console.log("✅ Copilot WebChat initialized");
         } catch (err) {
           console.error("❌ Failed to initialize WebChat:", err);
         }
       }
 
-      // 🔁 Listen for OpenFrame postMessage from Classic UI
+      // Receive record context from ServiceNow client script
       window.addEventListener("message", (event) => {
         try {
           const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
           if (data?.method === "openframe_communication") {
             const payload = JSON.parse(data.payload);
+            console.log("📩 Received context:", payload);
 
-            console.log("📩 Received from Classic Client Script:", payload);
-
-            if (directLine) {
-              directLine.postActivity({
-                type: 'event',
-                name: 'recordContext', // Event name should match bot trigger
-                from: { id: 'user1' },
-                value: {
-                  incidentId: payload.recordId,
-                  objectType: payload.objectType,
-                  source: payload.source,
-                  sourceId: payload.sourceId
-                }
-              }).subscribe(
-                id => console.log("📤 Event sent to bot:", id),
-                err => console.error("❌ Failed to send event:", err)
-              );
-            } else {
-              console.warn("⚠️ DirectLine not ready when message received.");
-            }
+            recordContext = {
+              incidentId: payload.recordId,
+              objectType: payload.objectType,
+              source: payload.source,
+              sourceId: payload.sourceId
+            };
           }
         } catch (e) {
           console.error("❌ Error handling OpenFrame message:", e);
         }
       });
 
-      // 🚀 Start WebChat
       startWebChat();
     </script>
   </body>
