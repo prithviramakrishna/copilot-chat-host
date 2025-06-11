@@ -39,45 +39,58 @@
         const { token } = await response.json();
 
         const settingsRes = await fetch('https://292d760cb79fe74db3cfbeb6da7b7d.0a.environment.api.powerplatform.com/powervirtualagents/regionalchannelsettings?api-version=2022-03-01-preview');
-        const { channelUrlsById: { directline } } = await settingsRes.json();
+        const settingsJson = await settingsRes.json();
+        const directline = settingsJson?.channelUrlsById?.directline;
 
         return { token, domain: new URL('v3/directline', directline).toString() };
       }
 
       async function startWebChat() {
-        const webchatDiv = document.getElementById('webchat');
-        const { token, domain } = await getDirectLineTokenAndUrl();
-        directLine = WebChat.createDirectLine({ token, domain });
-        const locale = document.documentElement.lang || 'en';
+        try {
+          const webchatDiv = document.getElementById('webchat');
+          const { token, domain } = await getDirectLineTokenAndUrl();
+          directLine = WebChat.createDirectLine({ token, domain });
 
-        WebChat.renderWebChat({
-          directLine,
-          locale,
-          styleOptions: {
-            hideUploadButton: true
-          }
-        }, webchatDiv);
+          WebChat.renderWebChat({
+            directLine,
+            locale: 'en',
+            styleOptions: {
+              hideUploadButton: true
+            }
+          }, webchatDiv);
+
+          console.log("✅ Copilot WebChat initialized");
+        } catch (err) {
+          console.error("❌ Failed to initialize WebChat:", err);
+        }
       }
 
-      // 👇 Listen to messages from ServiceNow OpenFrame
+      // 🔁 Listen for OpenFrame postMessage from Classic UI
       window.addEventListener("message", (event) => {
         try {
           const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
           if (data?.method === "openframe_communication") {
             const payload = JSON.parse(data.payload);
-            console.log("🔁 OpenFrame payload received:", payload.url);
+
+            console.log("📩 Received from Classic Client Script:", payload);
 
             if (directLine) {
               directLine.postActivity({
                 type: 'event',
-                name: 'snWorkspaceNavigation',
+                name: 'recordContext', // Event name should match bot trigger
                 from: { id: 'user1' },
                 value: {
-                  incidentId: payload.url,
+                  incidentId: payload.recordId,
+                  objectType: payload.objectType,
                   source: payload.source,
                   sourceId: payload.sourceId
                 }
-              }).subscribe();
+              }).subscribe(
+                id => console.log("📤 Event sent to bot:", id),
+                err => console.error("❌ Failed to send event:", err)
+              );
+            } else {
+              console.warn("⚠️ DirectLine not ready when message received.");
             }
           }
         } catch (e) {
@@ -85,6 +98,7 @@
         }
       });
 
+      // 🚀 Start WebChat
       startWebChat();
     </script>
   </body>
