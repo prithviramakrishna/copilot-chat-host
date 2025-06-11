@@ -1,38 +1,27 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+    <meta charset="UTF-8" />
     <title>Copilot Chat</title>
+    <script src="https://cdn.botframework.com/botframework-webchat/latest/webchat.js"></script>
     <style>
-      html, body {
+      html,
+      body {
+        height: 100%;
         margin: 0;
-        padding: 0;
-        height: 100%;
-        font-family: Segoe UI, sans-serif;
+        font-family: 'Segoe UI', sans-serif;
       }
-
-      #chat-container {
-        width: 100%;
-        height: 100%;
-        display: flex;
-        flex-direction: column;
-        background: #ffffff;
-      }
-
       #webchat {
-        flex: 1;
-        overflow: hidden;
+        height: 100%;
+        width: 100%;
       }
     </style>
   </head>
   <body>
-    <div id="chat-container">
-      <div id="webchat"></div>
-    </div>
+    <div id="webchat"></div>
 
-    <script src="https://cdn.botframework.com/botframework-webchat/latest/webchat.js"></script>
     <script>
       let directLine;
-      let recordContext = null;
 
       async function getDirectLineTokenAndUrl() {
         const tokenEndpoint = 'https://292d760cb79fe74db3cfbeb6da7b7d.0a.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview';
@@ -46,68 +35,65 @@
         return { token, domain: new URL('v3/directline', directline).toString() };
       }
 
-      async function startWebChat() {
-        try {
-          const webchatDiv = document.getElementById('webchat');
-          const { token, domain } = await getDirectLineTokenAndUrl();
-          directLine = WebChat.createDirectLine({ token, domain });
+      async function startBot() {
+        const { token, domain } = await getDirectLineTokenAndUrl();
 
-          WebChat.renderWebChat({
+        directLine = window.WebChat.createDirectLine({
+          token,
+          domain
+        });
+
+        window.WebChat.renderWebChat(
+          {
             directLine,
+            userID: 'user1',
             locale: 'en',
             styleOptions: {
-              hideUploadButton: true
+              hideUploadButton: false
             }
-          }, webchatDiv);
+          },
+          document.getElementById('webchat')
+        );
 
-          // When connection is open, send startConversation + context
-          directLine.connectionStatus$.subscribe(status => {
-            if (status === 2) {
-              const payload = {
-                locale: 'en',
-                localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                ...recordContext // Merges in recordId, objectType, etc.
-              };
-
-              directLine.postActivity({
-                type: 'event',
-                name: 'startConversation',
-                from: { id: 'user1' },
-                value: payload
-              }).subscribe(
-                id => console.log("✅ Bot started with record context:", payload),
-                err => console.error("❌ Failed to start conversation:", err)
-              );
-            }
-          });
-
-          console.log("✅ Copilot WebChat initialized");
-        } catch (err) {
-          console.error("❌ Failed to initialize WebChat:", err);
-        }
+        console.log('✅ Bot rendered.');
       }
 
-      // Receive record context from ServiceNow client script
+      startBot();
+
+      // Event listener for receiving context from ServiceNow client script
       window.addEventListener("message", (event) => {
         try {
           const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-          if (data?.method === "openframe_communication") {
-            const payload = JSON.parse(data.payload);
-            console.log("📩 Received context:", payload);
 
-            recordContext = {
-              incidentId: payload.recordId,
-              objectType: payload.objectType,
-              source: payload.source,
-              sourceId: payload.sourceId
+          if (data?.method === "openframe_communication") {
+            const parsedPayload = JSON.parse(data.payload);
+
+            const recordContext = {
+              recordId: parsedPayload.recordId,
+              objectType: parsedPayload.objectType,
+              source: parsedPayload.source,
+              sourceId: parsedPayload.sourceId
             };
+
+            const payload = {
+              locale: 'en',
+              localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              ...recordContext
+            };
+
+            console.log("✅ Bot started with record context:", payload);
+
+            directLine.postActivity({
+              type: 'event',
+              name: 'startConversation',
+              from: { id: 'user1' },
+              value: payload
+            }).subscribe();
           }
         } catch (e) {
           console.error("❌ Error handling OpenFrame message:", e);
         }
       });
-
-      startWebChat();
     </script>
   </body>
 </html>
