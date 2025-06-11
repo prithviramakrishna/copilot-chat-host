@@ -31,6 +31,8 @@
 
     <script src="https://cdn.botframework.com/botframework-webchat/latest/webchat.js"></script>
     <script>
+      let directLine;
+
       async function getDirectLineTokenAndUrl() {
         const tokenEndpoint = 'https://292d760cb79fe74db3cfbeb6da7b7d.0a.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview';
         const response = await fetch(tokenEndpoint);
@@ -42,14 +44,10 @@
         return { token, domain: new URL('v3/directline', directline).toString() };
       }
 
-      function getIncidentId() {
-        return sessionStorage.getItem("incidentId") || "unknown";
-      }
-
       async function startWebChat() {
         const webchatDiv = document.getElementById('webchat');
         const { token, domain } = await getDirectLineTokenAndUrl();
-        const directLine = WebChat.createDirectLine({ token, domain });
+        directLine = WebChat.createDirectLine({ token, domain });
         const locale = document.documentElement.lang || 'en';
 
         WebChat.renderWebChat({
@@ -59,25 +57,33 @@
             hideUploadButton: true
           }
         }, webchatDiv);
-
-        directLine.connectionStatus$.subscribe(status => {
-          if (status === 2) {
-            directLine.postActivity({
-              type: 'event',
-              name: 'startConversation',
-              from: { id: 'user1' },
-              value: {
-                localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                locale,
-                userName: 'John Doe',
-                userId: Date.now().toString(),
-                currentUrl: window.location.href,
-                incidentId: getIncidentId()
-              }
-            }).subscribe();
-          }
-        });
       }
+
+      // 👇 Listen to messages from ServiceNow OpenFrame
+      window.addEventListener("message", (event) => {
+        try {
+          const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+          if (data?.method === "openframe_communication") {
+            const payload = JSON.parse(data.payload);
+            console.log("🔁 OpenFrame payload received:", payload.url);
+
+            if (directLine) {
+              directLine.postActivity({
+                type: 'event',
+                name: 'snWorkspaceNavigation',
+                from: { id: 'user1' },
+                value: {
+                  incidentId: payload.url,
+                  source: payload.source,
+                  sourceId: payload.sourceId
+                }
+              }).subscribe();
+            }
+          }
+        } catch (e) {
+          console.error("❌ Error handling OpenFrame message:", e);
+        }
+      });
 
       startWebChat();
     </script>
