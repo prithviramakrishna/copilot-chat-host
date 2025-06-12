@@ -63,38 +63,31 @@
     }
 
     // 🔄 Wait for context from parent
-   window.addEventListener("message", (event) => {
-  try {
-    const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+    window.addEventListener("message", (event) => {
+      try {
+        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        console.log("📩 message received", data);
 
-    if (data?.method === "openframe_communication") {
-      const parsed = JSON.parse(data.payload);
+        if (data?.method === "openframe_communication") {
+          const parsed = JSON.parse(data.payload);
+          const payload = {
+            locale: 'en',
+            localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            ...parsed
+          };
+          console.log("✅ Parsed context:", payload);
+          renderBot(payload); // 🚀 Render when context is ready
+        }
 
-      // ✅ Extract incidentId from the URL
-      let incidentId = null;
-      const match = parsed.url?.match(/incident\/([a-f0-9]+)/i);
-      if (match) {
-        incidentId = match[1]; // e.g., "57af7aec73d423002728660c4cf6a71c"
+        if (data?.method === "close_frame") {
+          console.log("🔁 Reloading frame...");
+          window.location.reload();
+        }
+      } catch (e) {
+        console.error("❌ Failed to handle OpenFrame message", e);
       }
+    });
 
-      const payload = {
-        incidentId: incidentId,
-        url: parsed.url,
-        source: parsed.source,
-        sourceId: parsed.sourceId,
-        configType: parsed.configType,
-        locale: 'en',
-        localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone
-      };
-
-      console.log("✅ Final payload with incidentId:", payload);
-
-      renderBot(payload); // Start bot with enriched payload
-    }
-  } catch (e) {
-    console.error("❌ Error handling context message:", e);
-  }
-});
     console.log("👂 Listening for context message...");
   </script>
 </body>
