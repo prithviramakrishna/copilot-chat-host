@@ -55,31 +55,32 @@
     startBot();
 
     // Listen for record context from parent (ServiceNow)
-    window.addEventListener("message", (event) => {
-      try {
-        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+   // ✅ Listen from parent window's event bus
+window.parent.addEventListener("message", (event) => {
+  try {
+    const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
 
-        if (data?.method === "openframe_communication") {
-          const parsedPayload = JSON.parse(data.payload);
-          const payload = {
-            locale: 'en',
-            localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            ...parsedPayload
-          };
+    if (data?.method === "openframe_communication") {
+      const parsedPayload = JSON.parse(data.payload);
+      const payload = {
+        locale: 'en',
+        localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        ...parsedPayload
+      };
 
-          console.log("✅ Context received from ServiceNow:", payload);
+      console.log("✅ Context received from parent:", payload);
 
-          directLine.postActivity({
-            type: 'event',
-            name: 'startConversation',
-            from: { id: 'user1' },
-            value: payload
-          }).subscribe();
-        }
-      } catch (e) {
-        console.error("❌ Error handling context message:", e);
-      }
-    });
+      directLine.postActivity({
+        type: 'event',
+        name: 'startConversation',
+        from: { id: 'user1' },
+        value: payload
+      }).subscribe();
+    }
+  } catch (e) {
+    console.error("❌ Failed to handle OpenFrame message:", e);
+  }
+});
   </script>
 </body>
 </html>
