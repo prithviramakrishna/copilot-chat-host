@@ -34,7 +34,7 @@
       return { token, domain: new URL('v3/directline', directline).toString() };
     }
 
-    async function startBot() {
+    async function renderBot(contextPayload = null) {
       const { token, domain } = await getDirectLineTokenAndUrl();
 
       directLine = window.WebChat.createDirectLine({ token, domain });
@@ -49,38 +49,46 @@
         document.getElementById('webchat')
       );
 
-      console.log('✅ Bot rendered.');
+      console.log('✅ Bot rendered');
+
+      if (contextPayload) {
+        directLine.postActivity({
+          type: 'event',
+          name: 'startConversation',
+          from: { id: 'user1' },
+          value: contextPayload
+        }).subscribe();
+        console.log('📤 Sent context payload to bot:', contextPayload);
+      }
     }
 
-    startBot();
+    // 🔄 Wait for context from parent
+    window.addEventListener("message", (event) => {
+      try {
+        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        console.log("📩 message received", data);
 
-    // Listen for record context from parent (ServiceNow)
-   // ✅ Listen from parent window's event bus
-window.parent.addEventListener("message", (event) => {
-  try {
-    const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        if (data?.method === "openframe_communication") {
+          const parsed = JSON.parse(data.payload);
+          const payload = {
+            locale: 'en',
+            localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            ...parsed
+          };
+          console.log("✅ Parsed context:", payload);
+          renderBot(payload); // 🚀 Render when context is ready
+        }
 
-    if (data?.method === "openframe_communication") {
-      const parsedPayload = JSON.parse(data.payload);
-      const payload = {
-        locale: 'en',
-        localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        ...parsedPayload
-      };
+        if (data?.method === "close_frame") {
+          console.log("🔁 Reloading frame...");
+          window.location.reload();
+        }
+      } catch (e) {
+        console.error("❌ Failed to handle OpenFrame message", e);
+      }
+    });
 
-      console.log("✅ Context received from parent:", payload);
-
-      directLine.postActivity({
-        type: 'event',
-        name: 'startConversation',
-        from: { id: 'user1' },
-        value: payload
-      }).subscribe();
-    }
-  } catch (e) {
-    console.error("❌ Failed to handle OpenFrame message:", e);
-  }
-});
+    console.log("👂 Listening for context message...");
   </script>
 </body>
 </html>
