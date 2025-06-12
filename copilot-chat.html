@@ -1,99 +1,85 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Copilot Chat</title>
-    <script src="https://cdn.botframework.com/botframework-webchat/latest/webchat.js"></script>
-    <style>
-      html,
-      body {
-        height: 100%;
-        margin: 0;
-        font-family: 'Segoe UI', sans-serif;
-      }
-      #webchat {
-        height: 100%;
-        width: 100%;
-      }
-    </style>
-  </head>
-  <body>
-    <div id="webchat"></div>
+<head>
+  <meta charset="UTF-8" />
+  <title>Copilot Chat</title>
+  <script src="https://cdn.botframework.com/botframework-webchat/latest/webchat.js"></script>
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+    }
+    #webchat {
+      height: 100%;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div id="webchat"></div>
 
-    <script>
-      let directLine;
+  <script>
+    let directLine;
 
-      async function getDirectLineTokenAndUrl() {
-        const tokenEndpoint = 'https://292d760cb79fe74db3cfbeb6da7b7d.0a.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview';
-        const response = await fetch(tokenEndpoint);
-        const { token } = await response.json();
+    async function getDirectLineTokenAndUrl() {
+      const tokenEndpoint = 'https://292d760cb79fe74db3cfbeb6da7b7d.0a.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview';
+      const response = await fetch(tokenEndpoint);
+      const { token } = await response.json();
 
-        const settingsRes = await fetch('https://292d760cb79fe74db3cfbeb6da7b7d.0a.environment.api.powerplatform.com/powervirtualagents/regionalchannelsettings?api-version=2022-03-01-preview');
-        const settingsJson = await settingsRes.json();
-        const directline = settingsJson?.channelUrlsById?.directline;
+      const settingsRes = await fetch('https://292d760cb79fe74db3cfbeb6da7b7d.0a.environment.api.powerplatform.com/powervirtualagents/regionalchannelsettings?api-version=2022-03-01-preview');
+      const settingsJson = await settingsRes.json();
+      const directline = settingsJson?.channelUrlsById?.directline;
 
-        return { token, domain: new URL('v3/directline', directline).toString() };
-      }
+      return { token, domain: new URL('v3/directline', directline).toString() };
+    }
 
-      async function startBot() {
-        const { token, domain } = await getDirectLineTokenAndUrl();
+    async function startBot() {
+      const { token, domain } = await getDirectLineTokenAndUrl();
 
-        directLine = window.WebChat.createDirectLine({
-          token,
-          domain
-        });
+      directLine = window.WebChat.createDirectLine({ token, domain });
 
-        window.WebChat.renderWebChat(
-          {
-            directLine,
-            userID: 'user1',
+      window.WebChat.renderWebChat(
+        {
+          directLine,
+          userID: 'user1',
+          locale: 'en',
+          styleOptions: { hideUploadButton: false }
+        },
+        document.getElementById('webchat')
+      );
+
+      console.log('✅ Bot rendered.');
+    }
+
+    startBot();
+
+    // Listen for record context from parent (ServiceNow)
+    window.addEventListener("message", (event) => {
+      try {
+        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+
+        if (data?.method === "openframe_communication") {
+          const parsedPayload = JSON.parse(data.payload);
+          const payload = {
             locale: 'en',
-            styleOptions: {
-              hideUploadButton: false
-            }
-          },
-          document.getElementById('webchat')
-        );
+            localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            ...parsedPayload
+          };
 
-        console.log('✅ Bot rendered.');
-      }
+          console.log("✅ Context received from ServiceNow:", payload);
 
-      startBot();
-
-      // Event listener for receiving context from ServiceNow client script
-      window.addEventListener("message", (event) => {
-        try {
-          const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-
-          if (data?.method === "openframe_communication") {
-            const parsedPayload = JSON.parse(data.payload);
-
-            const recordContext = {
-              recordId: parsedPayload.recordId,
-              objectType: parsedPayload.objectType,
-              source: parsedPayload.source,
-              sourceId: parsedPayload.sourceId
-            };
-
-            const payload = {
-              locale: 'en',
-              localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-              ...recordContext
-            };
-
-            console.log("✅ Bot started with record context:", payload);
-
-            directLine.postActivity({
-              type: 'event',
-              name: 'startConversation',
-              from: { id: 'user1' },
-              value: payload
-            }).subscribe();
-          }
-        } catch (e) {
-          console.error("❌ Error handling OpenFrame message:", e);
+          directLine.postActivity({
+            type: 'event',
+            name: 'startConversation',
+            from: { id: 'user1' },
+            value: payload
+          }).subscribe();
         }
-      });
-    </script>
-  </body>
+      } catch (e) {
+        console.error("❌ Error handling context message:", e);
+      }
+    });
+  </script>
+</body>
 </html>
