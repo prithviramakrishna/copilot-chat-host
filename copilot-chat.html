@@ -6,13 +6,24 @@
   <script src="https://cdn.botframework.com/botframework-webchat/latest/webchat.js"></script>
   <style>
     html, body {
-      height: 100%;
       margin: 0;
-      font-family: 'Segoe UI', sans-serif;
-    }
-    #webchat {
+      padding: 0;
       height: 100%;
       width: 100%;
+    }
+
+    #chat-wrapper {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 9999;
+    }
+
+    #webchat {
+      width: 100%;
+      height: 100%;
     }
   </style>
 </head>
@@ -34,9 +45,8 @@
       return { token, domain: new URL('v3/directline', directline).toString() };
     }
 
-    async function renderBot(contextPayload = null) {
+    async function startWebChat(){
       const { token, domain } = await getDirectLineTokenAndUrl();
-
       directLine = window.WebChat.createDirectLine({ token, domain });
 
       window.WebChat.renderWebChat(
@@ -51,15 +61,16 @@
 
       console.log('✅ Bot rendered');
 
-      if (contextPayload) {
-        directLine.postActivity({
-          type: 'event',
-          name: 'startConversation',
-          from: { id: 'user1' },
-          value: contextPayload
-        }).subscribe();
-        console.log('📤 Sent context payload to bot:', contextPayload);
-      }
+      directLine.connectionStatus$.subscribe(status => {
+          if (status === 2) {
+            directLine.postActivity({
+              type: 'event',
+              name: 'startConversation',
+              from: { id: 'user1' },
+              value: contextPayload
+            }).subscribe();
+          }
+        });
     }
 
     // 🔄 Wait for context from parent
@@ -73,7 +84,7 @@
           const payload = {
             locale: 'en',
             localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            ...parsed
+            incidentId: parsed.URL
           };
           console.log("✅ Parsed context:", payload);
           renderBot(payload); // 🚀 Render when context is ready
