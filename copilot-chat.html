@@ -12,6 +12,15 @@
       width: 100%;
     }
 
+    #chat-wrapper {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 9999;
+    }
+
     #webchat {
       width: 100%;
       height: 100%;
@@ -58,7 +67,9 @@
             type: 'event',
             name: 'startConversation',
             from: { id: 'user1' },
-            value: contextPayload
+            value: {
+              incidentId: contextPayload.incidentId
+            }
           }).subscribe(() => {
             console.log("🚀 startConversation event sent with:", contextPayload);
           });
