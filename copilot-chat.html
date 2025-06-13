@@ -73,7 +73,7 @@
         console.log("📩 message received", data);
 
         if (data?.eventName === "openframe_communication") {
-          const parsed = JSON.parse(data.payload);
+          const parsed = JSON.parse(data.args);
 
           // Extract incidentId from URL
           let incidentId = null;
