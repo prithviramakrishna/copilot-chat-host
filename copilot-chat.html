@@ -12,15 +12,6 @@
       width: 100%;
     }
 
-    #chat-wrapper {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      z-index: 9999;
-    }
-
     #webchat {
       width: 100%;
       height: 100%;
@@ -45,7 +36,7 @@
       return { token, domain: new URL('v3/directline', directline).toString() };
     }
 
-    async function startWebChat(){
+    async function startWebChat(contextPayload) {
       const { token, domain } = await getDirectLineTokenAndUrl();
       directLine = window.WebChat.createDirectLine({ token, domain });
 
@@ -62,18 +53,20 @@
       console.log('✅ Bot rendered');
 
       directLine.connectionStatus$.subscribe(status => {
-          if (status === 2) {
-            directLine.postActivity({
-              type: 'event',
-              name: 'startConversation',
-              from: { id: 'user1' },
-              value: contextPayload
-            }).subscribe();
-          }
-        });
+        if (status === 2) {
+          directLine.postActivity({
+            type: 'event',
+            name: 'startConversation',
+            from: { id: 'user1' },
+            value: contextPayload
+          }).subscribe(() => {
+            console.log("🚀 startConversation event sent with:", contextPayload);
+          });
+        }
+      });
     }
 
-    // 🔄 Wait for context from parent
+    // Wait for context from parent
     window.addEventListener("message", (event) => {
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
@@ -81,13 +74,26 @@
 
         if (data?.method === "openframe_communication") {
           const parsed = JSON.parse(data.payload);
+
+          // Extract incidentId from URL
+          let incidentId = null;
+          const match = parsed.url?.match(/incident\/([a-f0-9]+)/i);
+          if (match) {
+            incidentId = match[1];
+          }
+
           const payload = {
             locale: 'en',
             localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            incidentId: parsed.URL
+            incidentId: incidentId,
+            url: parsed.url,
+            source: parsed.source,
+            sourceId: parsed.sourceId,
+            configType: parsed.configType
           };
-          console.log("✅ Parsed context:", payload);
-          renderBot(payload); // 🚀 Render when context is ready
+
+          console.log("✅ Final context payload:", payload);
+          startWebChat(payload); // Correct function call
         }
 
         if (data?.method === "close_frame") {
@@ -99,7 +105,7 @@
       }
     });
 
-    console.log("👂 Listening for context message...");
+    console.log("👂 Waiting for ServiceNow context...");
   </script>
 </body>
 </html>
