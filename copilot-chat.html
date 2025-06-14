@@ -32,6 +32,7 @@
 
   <script>
     let directLine;
+    let contextPayload = null;
 
     async function getDirectLineTokenAndUrl() {
       const tokenEndpoint = 'https://292d760cb79fe74db3cfbeb6da7b7d.0a.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview';
@@ -45,13 +46,31 @@
       return { token, domain: new URL('v3/directline', directline).toString() };
     }
 
-    async function startWebChat(contextPayload) {
+    async function startWebChat(payload) {
+      contextPayload = payload;
+
       const { token, domain } = await getDirectLineTokenAndUrl();
       directLine = window.WebChat.createDirectLine({ token, domain });
+
+      const store = window.WebChat.createStore({}, ({ dispatch }) => next => action => {
+        const activity = action?.payload?.activity;
+        if (
+          (action.type === 'DIRECT_LINE/INCOMING_ACTIVITY' || action.type === 'DIRECT_LINE/POST_ACTIVITY') &&
+          activity &&
+          payload?.incidentId
+        ) {
+          const transcriptKey = `chat_${payload.incidentId}`;
+          const prevTranscript = JSON.parse(localStorage.getItem(transcriptKey) || '[]');
+          prevTranscript.push(activity);
+          localStorage.setItem(transcriptKey, JSON.stringify(prevTranscript));
+        }
+        return next(action);
+      });
 
       window.WebChat.renderWebChat(
         {
           directLine,
+          store,
           userID: 'user1',
           locale: 'en',
           styleOptions: { hideUploadButton: false }
@@ -68,30 +87,26 @@
             name: 'startConversation',
             from: { id: 'user1' },
             value: {
-              incidentId: contextPayload.incidentId
+              incidentId: payload.incidentId
             }
           }).subscribe(() => {
-            console.log("🚀 startConversation event sent with:", contextPayload);
+            console.log("🚀 startConversation event sent with:", payload);
           });
         }
       });
     }
 
-    // Wait for context from parent
     window.addEventListener("message", (event) => {
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
         console.log("📩 message received", data);
 
+        // Communication from OpenFrame with incident URL
         if (data?.eventName === "openframe_communication") {
           const parsed = JSON.parse(data.args);
-
-          // Extract incidentId from URL
           let incidentId = null;
           const match = parsed.url?.match(/incident\/([a-f0-9]+)/i);
-          if (match) {
-            incidentId = match[1];
-          }
+          if (match) incidentId = match[1];
 
           const payload = {
             locale: 'en',
@@ -104,12 +119,19 @@
           };
 
           console.log("✅ Final context payload:", payload);
-          startWebChat(payload); // Correct function call
+          document.getElementById('webchat').innerHTML = ''; // Clear previous chat if any
+          startWebChat(payload);
         }
 
-        if (data?.method === "close_frame") {
-          console.log("🔁 Reloading frame...");
-          window.location.reload();
+        // Frame hidden event: Reset chat window and optionally clear history
+        if (data?.eventName === "openframe_hidden") {
+          console.log("🔄 openframe_hidden received — resetting chat");
+          if (contextPayload?.incidentId) {
+            // Optional: clear stored transcript
+            localStorage.removeItem(`chat_${contextPayload.incidentId}`);
+            document.getElementById('webchat').innerHTML = '';
+            startWebChat(contextPayload);
+          }
         }
       } catch (e) {
         console.error("❌ Failed to handle OpenFrame message", e);
