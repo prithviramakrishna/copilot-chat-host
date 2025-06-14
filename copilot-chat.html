@@ -104,7 +104,9 @@
           };
 
           console.log("✅ Final context payload:", payload);
-          startWebChat(payload); // Correct function call
+          if(payload.incidentId != null){
+            startWebChat(payload);
+          } // Correct function call
         }
 
         if (data?.method === "close_frame") {
