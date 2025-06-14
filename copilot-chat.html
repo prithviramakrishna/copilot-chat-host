@@ -4,43 +4,52 @@
   <meta charset="UTF-8" />
   <title>Copilot Chat</title>
   <script src="https://cdn.botframework.com/botframework-webchat/latest/webchat.js"></script>
-  <style>
-      html,
-      body {
-        height: 100%;
-      }
+    <style>
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      font-family: 'Segoe UI', sans-serif;
+    }
 
-      body {
-        margin: 0;
-      }
+    #container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      width: 100%;
+    }
 
-      h1 {
-        color: whitesmoke;
-        font-family: Segoe UI;
-        font-size: 16px;
-        line-height: 20px;
-        margin: 0;
-        padding: 0 20px;
-      }
+    #banner {
+      display: flex;
+      align-items: center;
+      background-color: black;
+      height: 50px;
+      width: 100%;
+      padding: 0 20px;
+      box-sizing: border-box;
+    }
 
-      #banner {
-        align-items: center;
-        background-color: black;
-        display: flex;
-        height: 50px;
-      }
+    #banner h1 {
+      color: whitesmoke;
+      font-size: 16px;
+      line-height: 20px;
+      margin: 0;
+    }
 
-      #webchat {
-        height: calc(100% - 50px);
-        overflow: hidden;
-        position: fixed;
-        top: 50px;
-        width: 100%;
-      }
-    </style>
+    #webchat {
+      flex: 1;
+      width: 100%;
+      overflow: hidden;
+    }
+  </style>
 </head>
 <body>
-  <div id="webchat"></div>
+  <div id="container">
+    <div id="webchat"></div>
+  </div>
 
   <script>
     let directLine;
