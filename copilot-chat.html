@@ -49,18 +49,28 @@
       return { token, domain: new URL('v3/directline', directline).toString() };
     }
 
-    function renderWebChat(session, incidentId) {
+   function renderWebChat(session, incidentId) {
       const container = document.getElementById('webchat');
-
-      window.WebChat.renderWebChat({
-        directLine: session.directLine,
-        userID: session.userID,
-        locale: session.locale,
-        styleOptions: session.styleOptions,
-        store: session.store
-      }, container);
-
-      console.log("✅ Bot rendered for", session.userID);
+      container.innerHTML = "";
+    
+      // Load from localStorage
+      const savedTranscript = localStorage.getItem(`chat_history_${incidentId}`);
+      const activities = savedTranscript ? JSON.parse(savedTranscript) : [];
+    
+      // Start Web Chat
+      window.WebChat.renderWebChat(
+        {
+          directLine: session.directLine,
+          userID: session.userID,
+          locale: session.locale,
+          styleOptions: session.styleOptions,
+          store: session.store,
+          activities // 👈 Inject saved chat
+        },
+        container
+      );
+    
+      console.log("✅ Bot rendered with restored chat for", session.userID);
     }
 
     async function startWebChat(contextPayload) {
