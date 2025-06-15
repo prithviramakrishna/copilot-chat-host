@@ -50,12 +50,21 @@
     }
 
     async function startWebChat(contextPayload) {
+      if (connectionSub) {
+              connectionSub.unsubscribe();
+              connectionSub = null;
+            }
+
+            if (directLine) {
+              try {
+                directLine = null;
+              } catch (e) {
+                console.warn("Error disposing DirectLine instance", e);
+              }
+            } 
+      
       const { token, domain } = await getDirectLineTokenAndUrl();
       directLine = window.WebChat.createDirectLine({ token, domain });
-
-      // Clear previous chat DOM
-      const container = document.getElementById('webchat');
-      container.innerHTML = '';
 
       window.WebChat.renderWebChat(
         {
@@ -114,20 +123,18 @@
           console.log("✅ Final context payload:", payload);
 
           if (payload.incidentId != null) {
-            // ✅ Dispose old DirectLine session properly
-            if (connectionSub) {
-              connectionSub.unsubscribe();
-              connectionSub = null;
-            }
-
-            if (directLine) {
-              try {
-                directLine = null;
-              } catch (e) {
-                console.warn("Error disposing DirectLine instance", e);
+           // ✅ Clear previous chat DOM
+              const container = document.getElementById('webchat');
+              container.innerHTML = '';
+            
+              // ✅ Unsubscribe from old connection stream
+              if (connectionSub) {
+                connectionSub.unsubscribe();
+                connectionSub = null;
               }
-            }
-
+            
+              // ✅ Reset DirectLine (no need to "end" or try/catch)
+              directLine = null;
             // ✅ Start new session
             startWebChat(payload);
           }
