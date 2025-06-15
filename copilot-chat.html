@@ -13,12 +13,14 @@
       overflow: hidden;
       font-family: 'Segoe UI', sans-serif;
     }
+
     #container {
       display: flex;
       flex-direction: column;
       height: 100%;
       width: 100%;
     }
+
     #webchat {
       flex: 1;
       width: 100%;
@@ -32,7 +34,8 @@
   </div>
 
   <script>
-    const sessionMap = new Map(); // Track sessions per incident
+    const sessionMap = new Map();
+    const SESSION_TIMEOUT_MS = 25 * 60 * 1000;
 
     async function getDirectLineTokenAndUrl() {
       const tokenEndpoint = 'https://292d760cb79fe74db3cfbeb6da7b7d.0a.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview';
@@ -46,46 +49,72 @@
       return { token, domain: new URL('v3/directline', directline).toString() };
     }
 
+    function renderWebChat(session, incidentId) {
+      const container = document.getElementById('webchat');
+
+      window.WebChat.renderWebChat({
+        directLine: session.directLine,
+        userID: session.userID,
+        locale: session.locale,
+        styleOptions: session.styleOptions,
+        store: session.store
+      }, container);
+
+      console.log("✅ Bot rendered for", session.userID);
+    }
+
     async function startWebChat(contextPayload) {
       const incidentKey = contextPayload.incidentId;
-      const userID = `user_${incidentKey}`; // Unique per incident
-
+      const userID = `user_${incidentKey}`;
       const container = document.getElementById('webchat');
-      container.innerHTML = ""; // Clear previous chat
+      container.innerHTML = "";
 
-      // Reuse session if exists
       if (sessionMap.has(incidentKey)) {
-        console.log("♻️ Reusing session for", incidentKey);
-        const session = sessionMap.get(incidentKey);
-        renderWebChat(session);
-        return;
+        const existingSession = sessionMap.get(incidentKey);
+        const now = Date.now();
+
+        if (now - existingSession.startTime < SESSION_TIMEOUT_MS) {
+          console.log("♻️ Reusing session for", incidentKey);
+          renderWebChat(existingSession, incidentKey);
+          return;
+        } else {
+          console.log("⏰ Session expired. Creating new DirectLine.");
+          sessionMap.delete(incidentKey);
+        }
       }
 
-      // Start new session
       const { token, domain } = await getDirectLineTokenAndUrl();
       const directLine = window.WebChat.createDirectLine({ token, domain });
+      const store = window.WebChat.createStore();
+      const transcript = [];
+
+      store.subscribe(() => {
+        const action = store.getState().lastAction;
+        if (action.type === 'DIRECT_LINE/INCOMING_ACTIVITY' || action.type === 'WEB_CHAT/SEND_MESSAGE') {
+          transcript.push(action.payload.activity);
+          localStorage.setItem(`chat_history_${incidentKey}`, JSON.stringify(transcript));
+        }
+      });
 
       const session = {
         directLine,
         userID,
         locale: 'en',
-        styleOptions: { hideUploadButton: false }
+        styleOptions: { hideUploadButton: false },
+        startTime: Date.now(),
+        store
       };
 
       sessionMap.set(incidentKey, session);
+      renderWebChat(session, incidentKey);
 
-      renderWebChat(session);
-
-      // Send startConversation event
       directLine.connectionStatus$.subscribe(status => {
         if (status === 2) {
           directLine.postActivity({
             type: 'event',
             name: 'startConversation',
-            from: { id: userID }, // Unique user per session
-            value: {
-              incidentId: contextPayload.incidentId
-            }
+            from: { id: userID },
+            value: { incidentId: contextPayload.incidentId }
           }).subscribe(() => {
             console.log("🚀 startConversation event sent with:", contextPayload);
           });
@@ -93,22 +122,6 @@
       });
     }
 
-    function renderWebChat(session) {
-      const container = document.getElementById('webchat');
-      container.innerHTML = "";
-      window.WebChat.renderWebChat(
-        {
-          directLine: session.directLine,
-          userID: session.userID,
-          locale: session.locale,
-          styleOptions: session.styleOptions
-        },
-        container
-      );
-      console.log("✅ Bot rendered for", session.userID);
-    }
-
-    // Receive messages from OpenFrame
     window.addEventListener("message", (event) => {
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
@@ -116,18 +129,14 @@
 
         if (data?.eventName === "openframe_communication") {
           const parsed = JSON.parse(data.args);
-
-          // Extract incidentId
           let incidentId = null;
           const match = parsed.url?.match(/incident\/([a-f0-9]+)/i);
-          if (match) {
-            incidentId = match[1];
-          }
+          if (match) incidentId = match[1];
 
           const payload = {
             locale: 'en',
             localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            incidentId,
+            incidentId: incidentId,
             url: parsed.url,
             source: parsed.source,
             sourceId: parsed.sourceId,
@@ -135,8 +144,7 @@
           };
 
           console.log("✅ Final context payload:", payload);
-
-          if (payload.incidentId != null) {
+          if (payload.incidentId) {
             startWebChat(payload);
           }
         }
