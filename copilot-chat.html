@@ -4,9 +4,8 @@
   <meta charset="UTF-8" />
   <title>Copilot Chat</title>
   <script src="https://cdn.botframework.com/botframework-webchat/latest/webchat.js"></script>
-    <style>
-    html,
-    body {
+  <style>
+    html, body {
       margin: 0;
       padding: 0;
       height: 100%;
@@ -54,24 +53,28 @@
       const { token, domain } = await getDirectLineTokenAndUrl();
       directLine = window.WebChat.createDirectLine({ token, domain });
 
+      // Clear previous chat DOM
+      const container = document.getElementById('webchat');
+      container.innerHTML = '';
+
       window.WebChat.renderWebChat(
         {
           directLine,
-          userID: 'user1',
+          userID: `user_${contextPayload.incidentId}`,
           locale: 'en',
           styleOptions: { hideUploadButton: false }
         },
-        document.getElementById('webchat')
+        container
       );
 
-      console.log('✅ Bot rendered');
+      console.log('✅ Bot rendered for', contextPayload.incidentId);
 
       connectionSub = directLine.connectionStatus$.subscribe(status => {
         if (status === 2) {
           directLine.postActivity({
             type: 'event',
             name: 'startConversation',
-            from: { id: 'user1' },
+            from: { id: `user_${contextPayload.incidentId}` },
             value: {
               incidentId: contextPayload.incidentId
             }
@@ -109,22 +112,25 @@
           };
 
           console.log("✅ Final context payload:", payload);
-          if(payload.incidentId != null){
-            if (directLine && directLine.end) {
-              try {
-                directLine.end();
-              } catch (e) {
-                console.warn("Error ending directLine", e);
-              }
-              directLine = null;
-            }
 
+          if (payload.incidentId != null) {
+            // ✅ Dispose old DirectLine session properly
             if (connectionSub) {
               connectionSub.unsubscribe();
               connectionSub = null;
             }
+
+            if (directLine) {
+              try {
+                directLine = null;
+              } catch (e) {
+                console.warn("Error disposing DirectLine instance", e);
+              }
+            }
+
+            // ✅ Start new session
             startWebChat(payload);
-          } // Correct function call
+          }
         }
 
         if (data?.eventName === "openframe_hidden") {
