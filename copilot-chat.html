@@ -113,7 +113,7 @@
           } // Correct function call
         }
 
-        if (data?.method === "close_frame") {
+        if (data?.eventName === "openframe_hidden") {
           console.log("🔁 Reloading frame...");
           window.location.reload();
         }
