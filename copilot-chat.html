@@ -32,7 +32,7 @@
   </div>
 
   <script>
-    let sessionMap = new Map(); // Per-incident chat sessions
+    const sessionMap = new Map(); // Track sessions per incident
 
     async function getDirectLineTokenAndUrl() {
       const tokenEndpoint = 'https://292d760cb79fe74db3cfbeb6da7b7d.0a.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview';
@@ -48,10 +48,12 @@
 
     async function startWebChat(contextPayload) {
       const incidentKey = contextPayload.incidentId;
+      const userID = `user_${incidentKey}`; // Unique per incident
+
       const container = document.getElementById('webchat');
       container.innerHTML = ""; // Clear previous chat
 
-      // Reuse session if available
+      // Reuse session if exists
       if (sessionMap.has(incidentKey)) {
         console.log("♻️ Reusing session for", incidentKey);
         const session = sessionMap.get(incidentKey);
@@ -59,13 +61,13 @@
         return;
       }
 
-      // Start a new session
+      // Start new session
       const { token, domain } = await getDirectLineTokenAndUrl();
       const directLine = window.WebChat.createDirectLine({ token, domain });
 
       const session = {
         directLine,
-        userID: 'user1',
+        userID,
         locale: 'en',
         styleOptions: { hideUploadButton: false }
       };
@@ -74,13 +76,13 @@
 
       renderWebChat(session);
 
-      // Send event only on new session
+      // Send startConversation event
       directLine.connectionStatus$.subscribe(status => {
         if (status === 2) {
           directLine.postActivity({
             type: 'event',
             name: 'startConversation',
-            from: { id: 'user1' },
+            from: { id: userID }, // Unique user per session
             value: {
               incidentId: contextPayload.incidentId
             }
@@ -93,7 +95,7 @@
 
     function renderWebChat(session) {
       const container = document.getElementById('webchat');
-      container.innerHTML = ""; // Clear previous chat
+      container.innerHTML = "";
       window.WebChat.renderWebChat(
         {
           directLine: session.directLine,
@@ -103,10 +105,10 @@
         },
         container
       );
-      console.log("✅ Bot rendered");
+      console.log("✅ Bot rendered for", session.userID);
     }
 
-    // Listen for context from parent (OpenFrame)
+    // Receive messages from OpenFrame
     window.addEventListener("message", (event) => {
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
@@ -115,7 +117,7 @@
         if (data?.eventName === "openframe_communication") {
           const parsed = JSON.parse(data.args);
 
-          // Extract incidentId from URL
+          // Extract incidentId
           let incidentId = null;
           const match = parsed.url?.match(/incident\/([a-f0-9]+)/i);
           if (match) {
@@ -125,7 +127,7 @@
           const payload = {
             locale: 'en',
             localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            incidentId: incidentId,
+            incidentId,
             url: parsed.url,
             source: parsed.source,
             sourceId: parsed.sourceId,
@@ -133,6 +135,7 @@
           };
 
           console.log("✅ Final context payload:", payload);
+
           if (payload.incidentId != null) {
             startWebChat(payload);
           }
