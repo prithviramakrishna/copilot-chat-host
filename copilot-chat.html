@@ -123,9 +123,6 @@
           console.log("✅ Final context payload:", payload);
 
           if (payload.incidentId != null) {
-           // ✅ Clear previous chat DOM
-              const container = document.getElementById('webchat');
-              container.innerHTML = '';
             
               // ✅ Unsubscribe from old connection stream
               if (connectionSub) {
