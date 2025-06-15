@@ -35,7 +35,8 @@
   </div>
 
   <script>
-    let directLine;
+    let directLine = null;
+    let connectionSub = null;
 
     async function getDirectLineTokenAndUrl() {
       const tokenEndpoint = 'https://292d760cb79fe74db3cfbeb6da7b7d.0a.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview';
@@ -65,7 +66,7 @@
 
       console.log('✅ Bot rendered');
 
-      directLine.connectionStatus$.subscribe(status => {
+      connectionSub = directLine.connectionStatus$.subscribe(status => {
         if (status === 2) {
           directLine.postActivity({
             type: 'event',
@@ -109,6 +110,19 @@
 
           console.log("✅ Final context payload:", payload);
           if(payload.incidentId != null){
+            if (directLine && directLine.end) {
+              try {
+                directLine.end();
+              } catch (e) {
+                console.warn("Error ending directLine", e);
+              }
+              directLine = null;
+            }
+
+            if (connectionSub) {
+              connectionSub.unsubscribe();
+              connectionSub = null;
+            }
             startWebChat(payload);
           } // Correct function call
         }
