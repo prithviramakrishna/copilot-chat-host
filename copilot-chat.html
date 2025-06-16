@@ -72,7 +72,7 @@
       window.WebChat.renderWebChat(
         {
           directLine,
-          userID: `user_${contextPayload.incidentId}`,
+          userID: 'user_1',
           locale: 'en',
           styleOptions: { hideUploadButton: false }
         },
@@ -86,7 +86,7 @@
           directLine.postActivity({
             type: 'event',
             name: 'startConversation',
-            from: { id: `user_${contextPayload.incidentId}` },
+            from: { id: 'user_1' },
             value: {
               incidentId: contextPayload.incidentId
             }
