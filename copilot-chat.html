@@ -68,7 +68,7 @@
           locale: 'en',
           styleOptions: { hideUploadButton: false }
         },
-        webchatContainer // ✅ Use correct reference here
+        document.getElementById('webchat') // ✅ Use correct reference here
       );
 
       console.log('✅ Bot rendered for', contextPayload.incidentId);
