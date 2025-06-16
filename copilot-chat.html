@@ -50,14 +50,6 @@
     }
 
     async function startWebChat(contextPayload) {
-      const webchatContainer = document.getElementById('webchat');
-      if (webchatContainer) {
-        webchatContainer.innerHTML = ''; // ✅ Clear previous chat
-      } else {
-        console.error("❌ #webchat container not found");
-        return;
-      }
-
       // Clean up old subscriptions/sessions
       if (connectionSub) {
         connectionSub.unsubscribe();
@@ -126,7 +118,33 @@
           console.log("✅ Final context payload:", payload);
 
           if (payload.incidentId != null) {
-            startWebChat(payload);
+            if (connectionSub) {
+              connectionSub.unsubscribe();
+              connectionSub = null;
+            }
+          
+            if (directLine && directLine.end) {
+              try {
+                directLine.end();
+              } catch (e) {
+                console.warn("Error ending DirectLine", e);
+              }
+              directLine = null;
+            }
+          
+            // Remove old webchat container
+            const oldWebchat = document.getElementById('webchat');
+            if (oldWebchat) {
+              oldWebchat.remove();
+            }
+          
+            // Recreate clean webchat div
+            const newWebchat = document.createElement('div');
+            newWebchat.id = 'webchat';
+            document.getElementById('container').appendChild(newWebchat);
+          
+            // Restart session
+            await startWebChat(payload);
           }
         }
 
