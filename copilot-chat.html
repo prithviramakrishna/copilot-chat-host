@@ -50,19 +50,22 @@
     }
 
     async function startWebChat(contextPayload) {
-      if (connectionSub) {
-              connectionSub.unsubscribe();
-              connectionSub = null;
-            }
+      const webchatContainer = document.getElementById('webchat');
+      if (webchatContainer) {
+        webchatContainer.innerHTML = ''; // ✅ Clear previous chat
+      } else {
+        console.error("❌ #webchat container not found");
+        return;
+      }
 
-            if (directLine) {
-              try {
-                directLine = null;
-              } catch (e) {
-                console.warn("Error disposing DirectLine instance", e);
-              }
-            } 
-      
+      // Clean up old subscriptions/sessions
+      if (connectionSub) {
+        connectionSub.unsubscribe();
+        connectionSub = null;
+      }
+
+      directLine = null; // let old one garbage collect
+
       const { token, domain } = await getDirectLineTokenAndUrl();
       directLine = window.WebChat.createDirectLine({ token, domain });
 
@@ -73,7 +76,7 @@
           locale: 'en',
           styleOptions: { hideUploadButton: false }
         },
-        container
+        webchatContainer // ✅ Use correct reference here
       );
 
       console.log('✅ Bot rendered for', contextPayload.incidentId);
@@ -123,16 +126,6 @@
           console.log("✅ Final context payload:", payload);
 
           if (payload.incidentId != null) {
-            
-              // ✅ Unsubscribe from old connection stream
-              if (connectionSub) {
-                connectionSub.unsubscribe();
-                connectionSub = null;
-              }
-            
-              // ✅ Reset DirectLine (no need to "end" or try/catch)
-              directLine = null;
-            // ✅ Start new session
             startWebChat(payload);
           }
         }
