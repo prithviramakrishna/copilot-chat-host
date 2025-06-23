@@ -38,11 +38,11 @@
     let connectionSub = null;
 
     async function getDirectLineTokenAndUrl() {
-      const tokenEndpoint = 'https://292d760cb79fe74db3cfbeb6da7b7d.0a.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview';
+      const tokenEndpoint = 'https://ac9995b4c763e323b7d7f36b8dfee2.07.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview';
       const response = await fetch(tokenEndpoint);
       const { token } = await response.json();
 
-      const settingsRes = await fetch('https://292d760cb79fe74db3cfbeb6da7b7d.0a.environment.api.powerplatform.com/powervirtualagents/regionalchannelsettings?api-version=2022-03-01-preview');
+      const settingsRes = await fetch('https://ac9995b4c763e323b7d7f36b8dfee2.07.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview');
       const settingsJson = await settingsRes.json();
       const directline = settingsJson?.channelUrlsById?.directline;
 
