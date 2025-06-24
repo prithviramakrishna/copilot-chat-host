@@ -36,6 +36,7 @@
   <script>
     let directLine = null;
     let connectionSub = null;
+    let lastIncidentId = null;
 
     async function getDirectLineTokenAndUrl() {
       const tokenEndpoint = 'https://ac9995b4c763e323b7d7f36b8dfee2.07.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview';
@@ -104,11 +105,18 @@
         if (data?.eventName === "openframe_communication") {
           const parsed = JSON.parse(data.args);
 
-          // Extract incidentId from URL
-          let incidentId = null;
-          const match = parsed.url?.match(/incident\/([a-f0-9]+)/i);
-          if (match) {
-            incidentId = match[1];
+          let incidentId = parsed.recordId || null;
+
+          if (!incidentId && parsed.url) {
+            const match = parsed.url?.match(/incident\/([a-f0-9]+)/i);
+            if (match) {
+              incidentId = match[1];
+            }
+          }
+
+          if (!incidentId) {
+            console.warn("❌ No incident ID found in message.");
+            return;
           }
 
           const payload = {
@@ -121,14 +129,16 @@
             configType: parsed.configType
           };
 
-          console.log("✅ Final context payload:", payload);
+          // Only proceed if it's a new incident
+          if (incidentId !== lastIncidentId) {
+            lastIncidentId = incidentId;
 
-          if (payload.incidentId != null) {
+            // Clear previous chat if needed
             if (connectionSub) {
               connectionSub.unsubscribe();
               connectionSub = null;
             }
-          
+
             if (directLine && directLine.end) {
               try {
                 directLine.end();
@@ -137,20 +147,19 @@
               }
               directLine = null;
             }
-          
-            // Remove old webchat container
+
+            // Recreate chat window
             const oldWebchat = document.getElementById('webchat');
-            if (oldWebchat) {
-              oldWebchat.remove();
-            }
-          
-            // Recreate clean webchat div
+            if (oldWebchat) oldWebchat.remove();
+
             const newWebchat = document.createElement('div');
             newWebchat.id = 'webchat';
             document.getElementById('container').appendChild(newWebchat);
-          
-            // Restart session
+
+            // Start the new session
             startWebChat(payload);
+          } else {
+            console.log(`🔁 Same incident ID (${incidentId}) — skipping chat restart.`);
           }
         }
 
