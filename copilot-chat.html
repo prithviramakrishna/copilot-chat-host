@@ -124,11 +124,7 @@
           const payload = {
             locale: 'en',
             localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            incidentId: incidentId,
-            url: parsed.url,
-            source: parsed.source,
-            sourceId: parsed.sourceId,
-            configType: parsed.configType
+            incidentId: incidentId
           };
 
           // Only proceed if it's a new incident
