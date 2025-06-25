@@ -53,7 +53,7 @@
     
       return {
         token,
-        domain: new URL('v3/directline', directline).toString() // e.g. https://directline.botframework.com/v3/directline
+        domain: new URL('v3/directline', directline).toString()
       };
     }
 
@@ -64,7 +64,7 @@
         connectionSub = null;
       }
 
-      directLine = null; // let old one garbage collect
+      directLine = null;
 
       const { token, domain } = await getDirectLineTokenAndUrl();
       directLine = window.WebChat.createDirectLine({ token, domain });
@@ -76,10 +76,10 @@
           locale: 'en',
           styleOptions: { hideUploadButton: false }
         },
-        document.getElementById('webchat') // ✅ Use correct reference here
+        document.getElementById('webchat')
       );
 
-      console.log('✅ Bot rendered for', contextPayload.incidentId);
+      console.log('Trace - Bot rendered for', contextPayload.incidentId);
 
       connectionSub = directLine.connectionStatus$.subscribe(status => {
         if (status === 2) {
@@ -91,7 +91,7 @@
               incidentId: contextPayload.incidentId
             }
           }).subscribe(() => {
-            console.log("🚀 startConversation event sent with:", contextPayload);
+            console.log("Trace - startConversation event sent with:", contextPayload);
           });
         }
       });
@@ -101,7 +101,7 @@
     window.addEventListener("message", (event) => {
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-        console.log("📩 message received", data);
+        console.log("Trace - message received", data);
         
         if (data?.eventName === "openframe_communication" || data?.eventName === "openframe_hidden") {
           if(data?.eventName === "openframe_communication"){
@@ -157,14 +157,33 @@
             // Start the new session
             startWebChat(payload);
           } else {
-            console.log(`🔁 Same incident ID (${incidentId}) — skipping chat restart.`);
+            console.log(`Trace - Incident ID (${incidentId}) — chat restart.`);
+            if (connectionSub) {
+              connectionSub.unsubscribe();
+              connectionSub = null;
+            }
+
+            if (directLine && directLine.end) {
+              try {
+                directLine.end();
+              } catch (e) {
+                console.warn("Error ending DirectLine", e);
+              }
+              directLine = null;
+            }
+
+            // Recreate chat window
+            const oldWebchat = document.getElementById('webchat');
+            if (oldWebchat) oldWebchat.remove();
+
+            const newWebchat = document.createElement('div');
+            newWebchat.id = 'webchat';
+            document.getElementById('container').appendChild(newWebchat);
+
+            // Start the new session
+            startWebChat(payload);
           }
         }
-
-        // if (data?.eventName === "openframe_hidden") {
-        //   console.log("🔁 Reloading frame...");
-        //   window.location.reload();
-        // }
       } catch (e) {
         console.error("Trace -  Failed to handle OpenFrame message", e);
       }
