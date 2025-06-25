@@ -102,7 +102,7 @@
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
         console.log("📩 message received", data);
 
-        if (data?.eventName === "openframe_communication") {
+        if (data?.eventName === "openframe_communication" || data?.eventName === "openframe_hidden") {
           const parsed = JSON.parse(data.args);
 
           let incidentId = parsed.recordId || null;
@@ -114,9 +114,9 @@
             }
           }
 
-          if (!incidentId) {
+          if (!incidentId && data?.eventName === "openframe_hidden") {
             console.warn("❌ No incident ID found in message.");
-            return;
+            incidentId = lastIncidentId;
           }
 
           const payload = {
@@ -163,10 +163,10 @@
           }
         }
 
-        if (data?.eventName === "openframe_hidden") {
-          console.log("🔁 Reloading frame...");
-          window.location.reload();
-        }
+        // if (data?.eventName === "openframe_hidden") {
+        //   console.log("🔁 Reloading frame...");
+        //   window.location.reload();
+        // }
       } catch (e) {
         console.error("❌ Failed to handle OpenFrame message", e);
       }
