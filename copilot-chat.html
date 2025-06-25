@@ -37,6 +37,7 @@
     let directLine = null;
     let connectionSub = null;
     let lastIncidentId = null;
+    let incidentId = null;
 
     async function getDirectLineTokenAndUrl() {
       const tokenEndpoint = 'https://ac9995b4c763e323b7d7f36b8dfee2.07.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview';
@@ -103,7 +104,6 @@
         console.log("📩 message received", data);
         
         if (data?.eventName === "openframe_communication" || data?.eventName === "openframe_hidden") {
-          let incidentId;
           if(data?.eventName === "openframe_communication"){
             const parsed = JSON.parse(data.args);
 
