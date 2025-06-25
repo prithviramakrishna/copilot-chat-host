@@ -116,7 +116,7 @@
               }
             }
           }
-          if (!incidentId && data?.eventName === "openframe_hidden") {
+          if (data?.eventName === "openframe_hidden") {
             console.warn("Trace - No incident ID found in message or same page was reloaded");
             incidentId = lastIncidentId;
           }
