@@ -37,34 +37,27 @@
     let directLine = null;
     let connectionSub = null;
     let lastIncidentId = null;
-    let incidentId = null;
 
+    // Get Direct Line token and base URL
     async function getDirectLineTokenAndUrl() {
       const tokenEndpoint = 'https://ac9995b4c763e323b7d7f36b8dfee2.07.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview';
       const settingsEndpoint = 'https://ac9995b4c763e323b7d7f36b8dfee2.07.environment.api.powerplatform.com/powervirtualagents/regionalchannelsettings?api-version=2022-03-01-preview';
-    
-      // 1. Get token
+
       const tokenResponse = await fetch(tokenEndpoint);
       const { token } = await tokenResponse.json();
-    
-      // 2. Get Direct Line base URL
+
       const settingsRes = await fetch(settingsEndpoint);
       const { channelUrlsById: { directline } } = await settingsRes.json();
-    
+
       return {
         token,
         domain: new URL('v3/directline', directline).toString()
       };
     }
 
-    async function startWebChat(contextPayload) {
-      // Clean up old subscriptions/sessions
-      if (connectionSub) {
-        connectionSub.unsubscribe();
-        connectionSub = null;
-      }
-
-      directLine = null;
+    // Start Web Chat with contextual payload
+    async function startWebChat(payload) {
+      await cleanUpChat();
 
       const { token, domain } = await getDirectLineTokenAndUrl();
       directLine = window.WebChat.createDirectLine({ token, domain });
@@ -79,7 +72,7 @@
         document.getElementById('webchat')
       );
 
-      console.log('Trace - Bot rendered for', contextPayload.incidentId);
+      console.log('Trace - Bot rendered for', payload.incidentId);
 
       connectionSub = directLine.connectionStatus$.subscribe(status => {
         if (status === 2) {
@@ -87,107 +80,84 @@
             type: 'event',
             name: 'startConversation',
             from: { id: 'user_1' },
-            value: {
-              incidentId: contextPayload.incidentId
-            }
+            value: { incidentId: payload.incidentId }
           }).subscribe(() => {
-            console.log("Trace - startConversation event sent with:", contextPayload);
+            console.log("Trace - startConversation event sent with:", payload);
           });
         }
       });
     }
 
-    // Wait for context from parent
-    window.addEventListener("message", (event) => {
+    // Clean up existing chat session and UI
+    async function cleanUpChat() {
+      if (connectionSub) {
+        connectionSub.unsubscribe();
+        connectionSub = null;
+      }
+
+      if (directLine && directLine.end) {
+        try {
+          directLine.end();
+        } catch (e) {
+          console.warn("Error ending DirectLine", e);
+        }
+        directLine = null;
+      }
+
+      const oldWebchat = document.getElementById('webchat');
+      if (oldWebchat) oldWebchat.remove();
+
+      const newWebchat = document.createElement('div');
+      newWebchat.id = 'webchat';
+      document.getElementById('container').appendChild(newWebchat);
+    }
+
+    // Listen for OpenFrame messages from parent
+    window.addEventListener("message", async (event) => {
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
         console.log("Trace - message received", data);
-        
-        if (data?.eventName === "openframe_communication" || data?.eventName === "openframe_hidden") {
-          if(data?.eventName === "openframe_communication"){
-            const parsed = JSON.parse(data.args);
 
-            incidentId = parsed.recordId || null;
+        if (!["openframe_communication", "openframe_hidden"].includes(data?.eventName)) return;
 
-            if (!incidentId && parsed.url) {
-              const match = parsed.url?.match(/incident\/([a-f0-9]+)/i);
-              if (match) {
-                incidentId = match[1];
-              }
-            }
-          }
-          if (data?.eventName === "openframe_hidden") {
-            console.warn("Trace - No incident ID found in message or same page was reloaded");
-            incidentId = lastIncidentId;
-          }
+        let incidentId = null;
 
-          const payload = {
-            locale: 'en',
-            localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            incidentId: incidentId
-          };
-
-          // Only proceed if it's a new incident
-          if (incidentId !== lastIncidentId) {
-            lastIncidentId = incidentId;
-
-            // Clear previous chat if needed
-            if (connectionSub) {
-              connectionSub.unsubscribe();
-              connectionSub = null;
-            }
-
-            if (directLine && directLine.end) {
-              try {
-                directLine.end();
-              } catch (e) {
-                console.warn("Error ending DirectLine", e);
-              }
-              directLine = null;
-            }
-
-            // Recreate chat window
-            const oldWebchat = document.getElementById('webchat');
-            if (oldWebchat) oldWebchat.remove();
-
-            const newWebchat = document.createElement('div');
-            newWebchat.id = 'webchat';
-            document.getElementById('container').appendChild(newWebchat);
-
-            // Start the new session
-            startWebChat(payload);
-          } else {
-            console.log(`Trace - Incident ID (${incidentId}) — chat restart.`);
-            if (connectionSub) {
-              connectionSub.unsubscribe();
-              connectionSub = null;
-            }
-
-            if (directLine && directLine.end) {
-              try {
-                directLine.end();
-              } catch (e) {
-                console.warn("Error ending DirectLine", e);
-              }
-              directLine = null;
-            }
-
-            // Recreate chat window
-            const oldWebchat = document.getElementById('webchat');
-            if (oldWebchat) oldWebchat.remove();
-
-            const newWebchat = document.createElement('div');
-            newWebchat.id = 'webchat';
-            document.getElementById('container').appendChild(newWebchat);
-
-            // Start the new session
-            startWebChat(payload);
-          }
+        if (data.eventName === "openframe_communication") {
+          const args = JSON.parse(data.args);
+          incidentId = args.recordId || extractIncidentIdFromUrl(args.url);
+        } else if (data.eventName === "openframe_hidden") {
+          incidentId = lastIncidentId;
+          console.warn("Trace - Using last known incident ID");
         }
+
+        if (!incidentId) {
+          console.warn("Trace - No incident ID found");
+          return;
+        }
+
+        const payload = {
+          locale: 'en',
+          localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          incidentId
+        };
+
+        const isNewIncident = incidentId !== lastIncidentId;
+        lastIncidentId = incidentId;
+
+        console.log(`Trace - ${isNewIncident ? "New" : "Restarted"} chat for Incident ID: ${incidentId}`);
+
+        await startWebChat(payload);
+
       } catch (e) {
-        console.error("Trace -  Failed to handle OpenFrame message", e);
+        console.error("Trace - Failed to handle OpenFrame message", e);
       }
     });
+
+    // Utility: Extract incidentId from URL
+    function extractIncidentIdFromUrl(url) {
+      const match = url?.match(/incident\/([a-f0-9]+)/i);
+      return match ? match[1] : null;
+    }
 
     console.log("Trace - Waiting for ServiceNow context...");
   </script>
