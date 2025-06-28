@@ -13,14 +13,12 @@
       overflow: hidden;
       font-family: 'Segoe UI', sans-serif;
     }
-
     #container {
       display: flex;
       flex-direction: column;
       height: 100%;
       width: 100%;
     }
-
     #webchat {
       flex: 1;
       width: 100%;
@@ -34,12 +32,11 @@
   </div>
 
   <script>
+    const TOKEN_EXPIRY_TIME = 29 * 60 * 1000; // 29 minutes
     let directLine = null;
     let connectionSub = null;
-    let lastIncidentId = null;
-    const TOKEN_EXPIRY_TIME = 29 * 60 * 1000; // 29 minutes
 
-    async function getTokenAndDomain() {
+    async function getNewTokenAndDomain() {
       const tokenEndpoint = 'https://ac9995b4c763e323b7d7f36b8dfee2.07.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview';
       const settingsEndpoint = 'https://ac9995b4c763e323b7d7f36b8dfee2.07.environment.api.powerplatform.com/powervirtualagents/regionalchannelsettings?api-version=2022-03-01-preview';
 
@@ -56,31 +53,25 @@
     async function startWebChat(payload) {
       const { incidentId } = payload;
       const cacheKey = `chat_${incidentId}`;
-      const cachedData = JSON.parse(sessionStorage.getItem(cacheKey) || '{}');
+      let cache = JSON.parse(sessionStorage.getItem(cacheKey) || '{}');
 
-      let token = cachedData.token;
-      let domain = cachedData.domain;
-      let conversationId = cachedData.conversationId;
-      const tokenTimestamp = cachedData.tokenTimestamp || 0;
+      let { token, domain, conversationId, tokenTimestamp } = cache;
+      const now = Date.now();
 
-      const isOldIncident = incidentId !== lastIncidentId;
-      const isTokenValid = token && (Date.now() - tokenTimestamp < TOKEN_EXPIRY_TIME);
+      const isTokenValid = token && tokenTimestamp && now - tokenTimestamp < TOKEN_EXPIRY_TIME;
 
-      // CASE: Switching to a new incident tab — always get a fresh token
-      // CASE: Switching back to old incident tab — reuse if token valid, else fetch new
-      if ( isOldIncident || !isTokenValid ) {
-        console.log("Trace - Fetching NEW token for incident:", incidentId);
-        const auth = await getTokenAndDomain();
-        token = auth.token;
-        domain = auth.domain;
-        conversationId = null; // new token invalidates old conversation
-        sessionStorage.setItem(cacheKey, JSON.stringify({
-          token,
-          domain,
-          tokenTimestamp: auth.tokenTimestamp
-        }));
+      // Fetch new token if invalid or missing
+      if (!isTokenValid || !token || !domain) {
+        console.log(`Trace - Fetching NEW token for incident: ${incidentId}`);
+        const newTokenData = await getNewTokenAndDomain();
+        token = newTokenData.token;
+        domain = newTokenData.domain;
+        tokenTimestamp = newTokenData.tokenTimestamp;
+        conversationId = null; // Fresh conversation if new token
+        cache = { token, domain, tokenTimestamp };
+        sessionStorage.setItem(cacheKey, JSON.stringify(cache));
       } else {
-        console.log("Trace - Reusing cached token for incident:", incidentId);
+        console.log(`Trace - Reusing VALID token for incident: ${incidentId}`);
       }
 
       await cleanUpChat();
@@ -94,10 +85,9 @@
       connectionSub = directLine.connectionStatus$.subscribe(status => {
         if (status === 2) {
           if (!conversationId && directLine.conversationId) {
-            // Store updated conversationId
-            const updated = JSON.parse(sessionStorage.getItem(cacheKey) || '{}');
-            updated.conversationId = directLine.conversationId;
-            sessionStorage.setItem(cacheKey, JSON.stringify(updated));
+            cache = JSON.parse(sessionStorage.getItem(cacheKey) || '{}');
+            cache.conversationId = directLine.conversationId;
+            sessionStorage.setItem(cacheKey, JSON.stringify(cache));
           }
 
           directLine.postActivity({
@@ -106,7 +96,7 @@
             from: { id: 'user_1' },
             value: { incidentId }
           }).subscribe(() => {
-            console.log("Trace - startConversation event sent with:", payload);
+            console.log("Trace - startConversation event sent:", payload);
           });
 
           connectionSub.unsubscribe();
@@ -123,8 +113,7 @@
         document.getElementById('webchat')
       );
 
-      console.log('Trace - Bot rendered for incident:', incidentId);
-      lastIncidentId = incidentId;
+      console.log(`Trace - Chat started for incident: ${incidentId}`);
     }
 
     async function cleanUpChat() {
@@ -137,7 +126,7 @@
         try {
           directLine.end();
         } catch (e) {
-          console.warn("Error ending DirectLine", e);
+          console.warn("Trace - Error ending DirectLine:", e);
         }
         directLine = null;
       }
@@ -150,7 +139,7 @@
       document.getElementById('container').appendChild(newWebchat);
     }
 
-    // Handle OpenFrame messaging from ServiceNow
+    // Handle OpenFrame message from ServiceNow
     window.addEventListener("message", async (event) => {
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
@@ -163,9 +152,6 @@
         if (data.eventName === "openframe_communication") {
           const args = JSON.parse(data.args);
           incidentId = args.recordId || extractIncidentIdFromUrl(args.url);
-        } else if (data.eventName === "openframe_hidden") {
-          incidentId = lastIncidentId;
-          console.warn("Trace - Using last known incident ID");
         }
 
         if (!incidentId) {
@@ -182,7 +168,7 @@
         await startWebChat(payload);
 
       } catch (e) {
-        console.error("Trace - Failed to handle OpenFrame message", e);
+        console.error("Trace - Failed to handle OpenFrame message:", e);
       }
     });
 
