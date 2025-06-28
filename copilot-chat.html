@@ -38,29 +38,67 @@
     let connectionSub = null;
     let lastIncidentId = null;
 
-    // Get Direct Line token and base URL
-    async function getDirectLineTokenAndUrl() {
+    async function getTokenAndDomain() {
       const tokenEndpoint = 'https://ac9995b4c763e323b7d7f36b8dfee2.07.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview';
       const settingsEndpoint = 'https://ac9995b4c763e323b7d7f36b8dfee2.07.environment.api.powerplatform.com/powervirtualagents/regionalchannelsettings?api-version=2022-03-01-preview';
 
-      const tokenResponse = await fetch(tokenEndpoint);
-      const { token } = await tokenResponse.json();
+      const tokenRes = await fetch(tokenEndpoint);
+      const { token } = await tokenRes.json();
 
       const settingsRes = await fetch(settingsEndpoint);
       const { channelUrlsById: { directline } } = await settingsRes.json();
 
-      return {
-        token,
-        domain: new URL('v3/directline', directline).toString()
-      };
+      const domain = new URL('v3/directline', directline).toString();
+      return { token, domain, tokenTimestamp: Date.now() };
     }
 
-    // Start Web Chat with contextual payload
     async function startWebChat(payload) {
+      const { incidentId } = payload;
+      const cacheKey = `chat_${incidentId}`;
+      let cache = JSON.parse(sessionStorage.getItem(cacheKey) || '{}');
+      let { token, domain, conversationId, tokenTimestamp } = cache;
+
+      const TOKEN_EXPIRY_TIME = 29 * 60 * 1000; // 29 minutes
+
+      if (!token || !domain || (Date.now() - (tokenTimestamp || 0)) > TOKEN_EXPIRY_TIME) {
+        console.log("Trace - Fetching new token for incident:", incidentId);
+        const newAuth = await getTokenAndDomain();
+        token = newAuth.token;
+        domain = newAuth.domain;
+        tokenTimestamp = newAuth.tokenTimestamp;
+        conversationId = null; // new token invalidates old conversationId
+        sessionStorage.setItem(cacheKey, JSON.stringify({ token, domain, tokenTimestamp }));
+      }
+
       await cleanUpChat();
 
-      const { token, domain } = await getDirectLineTokenAndUrl();
-      directLine = window.WebChat.createDirectLine({ token, domain });
+      directLine = window.WebChat.createDirectLine({
+        token,
+        domain,
+        ...(conversationId ? { conversationId } : {})
+      });
+
+      connectionSub = directLine.connectionStatus$.subscribe(status => {
+        if (status === 2) {
+          if (!conversationId && directLine.conversationId) {
+            // Save conversationId
+            cache = JSON.parse(sessionStorage.getItem(cacheKey));
+            cache.conversationId = directLine.conversationId;
+            sessionStorage.setItem(cacheKey, JSON.stringify(cache));
+          }
+
+          directLine.postActivity({
+            type: 'event',
+            name: 'startConversation',
+            from: { id: 'user_1' },
+            value: { incidentId }
+          }).subscribe(() => {
+            console.log("Trace - startConversation event sent with:", payload);
+          });
+
+          connectionSub.unsubscribe();
+        }
+      });
 
       window.WebChat.renderWebChat(
         {
@@ -72,23 +110,9 @@
         document.getElementById('webchat')
       );
 
-      console.log('Trace - Bot rendered for', payload.incidentId);
-
-      connectionSub = directLine.connectionStatus$.subscribe(status => {
-        if (status === 2) {
-          directLine.postActivity({
-            type: 'event',
-            name: 'startConversation',
-            from: { id: 'user_1' },
-            value: { incidentId: payload.incidentId }
-          }).subscribe(() => {
-            console.log("Trace - startConversation event sent with:", payload);
-          });
-        }
-      });
+      console.log('Trace - Bot rendered for', incidentId);
     }
 
-    // Clean up existing chat session and UI
     async function cleanUpChat() {
       if (connectionSub) {
         connectionSub.unsubscribe();
@@ -112,7 +136,6 @@
       document.getElementById('container').appendChild(newWebchat);
     }
 
-    // Listen for OpenFrame messages from parent
     window.addEventListener("message", async (event) => {
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
@@ -145,7 +168,6 @@
         lastIncidentId = incidentId;
 
         console.log(`Trace - ${isNewIncident ? "New" : "Restarted"} chat for Incident ID: ${incidentId}`);
-
         await startWebChat(payload);
 
       } catch (e) {
@@ -153,7 +175,6 @@
       }
     });
 
-    // Utility: Extract incidentId from URL
     function extractIncidentIdFromUrl(url) {
       const match = url?.match(/incident\/([a-f0-9]+)/i);
       return match ? match[1] : null;
