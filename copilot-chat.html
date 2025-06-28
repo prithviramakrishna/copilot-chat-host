@@ -13,70 +13,60 @@
       overflow: hidden;
       font-family: 'Segoe UI', sans-serif;
     }
-    #container {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-      width: 100%;
-    }
+
     #webchat {
-      flex: 1;
+      height: 100%;
       width: 100%;
       overflow: hidden;
     }
   </style>
 </head>
 <body>
-  <div id="container">
-    <div id="webchat"></div>
-  </div>
+  <div id="webchat"></div>
 
   <script>
-    const TOKEN_EXPIRY_TIME = 29 * 60 * 1000; // 29 minutes
-    let directLine = null;
-    let connectionSub = null;
+    const TOKEN_EXPIRY_MS = 29 * 60 * 1000;
+    const apiVersion = '2022-03-01-preview';
+    const botId = 'cr5d4_agent1';
+    const tokenEndpoint = `https://ac9995b4c763e323b7d7f36b8dfee2.07.environment.api.powerplatform.com/powervirtualagents/botsbyschema/${botId}/directline/token?api-version=${apiVersion}`;
+    const settingsEndpoint = `https://ac9995b4c763e323b7d7f36b8dfee2.07.environment.api.powerplatform.com/powervirtualagents/regionalchannelsettings?api-version=${apiVersion}`;
+
+    let directLine, connectionSub;
 
     async function getNewTokenAndDomain() {
-      const tokenEndpoint = 'https://ac9995b4c763e323b7d7f36b8dfee2.07.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview';
-      const settingsEndpoint = 'https://ac9995b4c763e323b7d7f36b8dfee2.07.environment.api.powerplatform.com/powervirtualagents/regionalchannelsettings?api-version=2022-03-01-preview';
-
-      const tokenRes = await fetch(tokenEndpoint);
-      const { token } = await tokenRes.json();
-
-      const settingsRes = await fetch(settingsEndpoint);
-      const { channelUrlsById: { directline } } = await settingsRes.json();
-
-      const domain = new URL('v3/directline', directline).toString();
+      const [tokenRes, settingsRes] = await Promise.all([
+        fetch(tokenEndpoint).then(r => r.json()),
+        fetch(settingsEndpoint).then(r => r.json())
+      ]);
+      const token = tokenRes.token;
+      const domain = new URL('v3/directline', settingsRes.channelUrlsById.directline).toString();
       return { token, domain, tokenTimestamp: Date.now() };
     }
 
-    async function startWebChat(payload) {
-      const { incidentId } = payload;
+    async function startWebChat(incidentId) {
       const cacheKey = `chat_${incidentId}`;
-      let cache = JSON.parse(sessionStorage.getItem(cacheKey) || '{}');
+      const cache = JSON.parse(sessionStorage.getItem(cacheKey) || '{}');
+      let { token, domain, tokenTimestamp, conversationId } = cache;
+      const isTokenValid = token && (Date.now() - (tokenTimestamp || 0) < TOKEN_EXPIRY_MS);
 
-      let { token, domain, conversationId, tokenTimestamp } = cache;
-      const now = Date.now();
-
-      const isTokenValid = token && tokenTimestamp && now - tokenTimestamp < TOKEN_EXPIRY_TIME;
-
-      // Fetch new token if invalid or missing
+      // If token is invalid or missing, fetch a new one
       if (!isTokenValid || !token || !domain) {
-        console.log(`Trace - Fetching NEW token for incident: ${incidentId}`);
-        const newTokenData = await getNewTokenAndDomain();
-        token = newTokenData.token;
-        domain = newTokenData.domain;
-        tokenTimestamp = newTokenData.tokenTimestamp;
-        conversationId = null; // Fresh conversation if new token
-        cache = { token, domain, tokenTimestamp };
-        sessionStorage.setItem(cacheKey, JSON.stringify(cache));
+        const fresh = await getNewTokenAndDomain();
+        token = fresh.token;
+        domain = fresh.domain;
+        tokenTimestamp = fresh.tokenTimestamp;
+        conversationId = null;
+        sessionStorage.setItem(cacheKey, JSON.stringify({ token, domain, tokenTimestamp }));
+        console.log("🔁 New token fetched for", incidentId);
       } else {
-        console.log(`Trace - Reusing VALID token for incident: ${incidentId}`);
+        console.log("✅ Reusing token for", incidentId);
       }
 
-      await cleanUpChat();
+      // Clean up before creating new chat
+      if (connectionSub) connectionSub.unsubscribe();
+      if (directLine?.end) directLine.end();
 
-      directLine = window.WebChat.createDirectLine({
+      directLine = WebChat.createDirectLine({
         token,
         domain,
         ...(conversationId ? { conversationId } : {})
@@ -85,99 +75,37 @@
       connectionSub = directLine.connectionStatus$.subscribe(status => {
         if (status === 2) {
           if (!conversationId && directLine.conversationId) {
-            cache = JSON.parse(sessionStorage.getItem(cacheKey) || '{}');
-            cache.conversationId = directLine.conversationId;
-            sessionStorage.setItem(cacheKey, JSON.stringify(cache));
+            const updated = JSON.parse(sessionStorage.getItem(cacheKey) || '{}');
+            updated.conversationId = directLine.conversationId;
+            sessionStorage.setItem(cacheKey, JSON.stringify(updated));
           }
 
           directLine.postActivity({
             type: 'event',
             name: 'startConversation',
-            from: { id: 'user_1' },
+            from: { id: 'user' },
             value: { incidentId }
-          }).subscribe(() => {
-            console.log("Trace - startConversation event sent:", payload);
-          });
-
-          connectionSub.unsubscribe();
+          }).subscribe();
         }
       });
 
-      window.WebChat.renderWebChat(
-        {
-          directLine,
-          userID: 'user_1',
-          locale: 'en',
-          styleOptions: { hideUploadButton: false }
-        },
-        document.getElementById('webchat')
-      );
-
-      console.log(`Trace - Chat started for incident: ${incidentId}`);
+      WebChat.renderWebChat({
+        directLine,
+        locale: 'en',
+        userID: 'user',
+        styleOptions: {
+          hideUploadButton: false,
+          botAvatarInitials: 'BF',
+          botAvatarBackgroundColor: '#001931',
+          userAvatarBackgroundColor: 'gold',
+          userAvatarInitials: 'You'
+        }
+      }, document.getElementById('webchat'));
     }
 
-    async function cleanUpChat() {
-      if (connectionSub) {
-        connectionSub.unsubscribe();
-        connectionSub = null;
-      }
-
-      if (directLine && directLine.end) {
-        try {
-          directLine.end();
-        } catch (e) {
-          console.warn("Trace - Error ending DirectLine:", e);
-        }
-        directLine = null;
-      }
-
-      const oldWebchat = document.getElementById('webchat');
-      if (oldWebchat) oldWebchat.remove();
-
-      const newWebchat = document.createElement('div');
-      newWebchat.id = 'webchat';
-      document.getElementById('container').appendChild(newWebchat);
-    }
-
-    // Handle OpenFrame message from ServiceNow
-    window.addEventListener("message", async (event) => {
-      try {
-        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-        console.log("Trace - message received", data);
-
-        if (!["openframe_communication", "openframe_hidden"].includes(data?.eventName)) return;
-
-        let incidentId = null;
-
-        if (data.eventName === "openframe_communication") {
-          const args = JSON.parse(data.args);
-          incidentId = args.recordId || extractIncidentIdFromUrl(args.url);
-        }
-
-        if (!incidentId) {
-          console.warn("Trace - No incident ID found");
-          return;
-        }
-
-        const payload = {
-          locale: 'en',
-          localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          incidentId
-        };
-
-        await startWebChat(payload);
-
-      } catch (e) {
-        console.error("Trace - Failed to handle OpenFrame message:", e);
-      }
-    });
-
-    function extractIncidentIdFromUrl(url) {
-      const match = url?.match(/incident\/([a-f0-9]+)/i);
-      return match ? match[1] : null;
-    }
-
-    console.log("Trace - Waiting for ServiceNow context...");
+    // Example incidentId — replace this with real OpenFrame context message handling
+    const incidentId = new URLSearchParams(window.location.search).get("incidentId") || "default_incident_123";
+    startWebChat(incidentId);
   </script>
 </body>
 </html>
