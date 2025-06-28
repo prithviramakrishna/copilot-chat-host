@@ -68,7 +68,7 @@
 
       // CASE: Switching to a new incident tab — always get a fresh token
       // CASE: Switching back to old incident tab — reuse if token valid, else fetch new
-      if (!isOldIncident || !isTokenValid ) {
+      if ( isOldIncident || !isTokenValid ) {
         console.log("Trace - Fetching NEW token for incident:", incidentId);
         const auth = await getTokenAndDomain();
         token = auth.token;
