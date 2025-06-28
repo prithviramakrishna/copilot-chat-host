@@ -37,6 +37,7 @@
     let directLine = null;
     let connectionSub = null;
     let lastIncidentId = null;
+    const TOKEN_EXPIRY_TIME = 29 * 60 * 1000; // 29 minutes
 
     async function getTokenAndDomain() {
       const tokenEndpoint = 'https://ac9995b4c763e323b7d7f36b8dfee2.07.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview';
@@ -55,19 +56,31 @@
     async function startWebChat(payload) {
       const { incidentId } = payload;
       const cacheKey = `chat_${incidentId}`;
-      let cache = JSON.parse(sessionStorage.getItem(cacheKey) || '{}');
-      let { token, domain, conversationId, tokenTimestamp } = cache;
+      const cachedData = JSON.parse(sessionStorage.getItem(cacheKey) || '{}');
 
-      const TOKEN_EXPIRY_TIME = 29 * 60 * 1000; // 29 minutes
+      let token = cachedData.token;
+      let domain = cachedData.domain;
+      let conversationId = cachedData.conversationId;
+      const tokenTimestamp = cachedData.tokenTimestamp || 0;
 
-      if (!token || !domain || (Date.now() - (tokenTimestamp || 0)) > TOKEN_EXPIRY_TIME) {
-        console.log("Trace - Fetching new token for incident:", incidentId);
-        const newAuth = await getTokenAndDomain();
-        token = newAuth.token;
-        domain = newAuth.domain;
-        tokenTimestamp = newAuth.tokenTimestamp;
-        conversationId = null; // new token invalidates old conversationId
-        sessionStorage.setItem(cacheKey, JSON.stringify({ token, domain, tokenTimestamp }));
+      const isOldIncident = incidentId === lastIncidentId;
+      const isTokenValid = token && (Date.now() - tokenTimestamp < TOKEN_EXPIRY_TIME);
+
+      // CASE: Switching to a new incident tab — always get a fresh token
+      // CASE: Switching back to old incident tab — reuse if token valid, else fetch new
+      if (!isOldIncident || !isTokenValid || !token || !domain) {
+        console.log("Trace - Fetching NEW token for incident:", incidentId);
+        const auth = await getTokenAndDomain();
+        token = auth.token;
+        domain = auth.domain;
+        conversationId = null; // new token invalidates old conversation
+        sessionStorage.setItem(cacheKey, JSON.stringify({
+          token,
+          domain,
+          tokenTimestamp: auth.tokenTimestamp
+        }));
+      } else {
+        console.log("Trace - Reusing cached token for incident:", incidentId);
       }
 
       await cleanUpChat();
@@ -81,10 +94,10 @@
       connectionSub = directLine.connectionStatus$.subscribe(status => {
         if (status === 2) {
           if (!conversationId && directLine.conversationId) {
-            // Save conversationId
-            cache = JSON.parse(sessionStorage.getItem(cacheKey));
-            cache.conversationId = directLine.conversationId;
-            sessionStorage.setItem(cacheKey, JSON.stringify(cache));
+            // Store updated conversationId
+            const updated = JSON.parse(sessionStorage.getItem(cacheKey) || '{}');
+            updated.conversationId = directLine.conversationId;
+            sessionStorage.setItem(cacheKey, JSON.stringify(updated));
           }
 
           directLine.postActivity({
@@ -110,7 +123,8 @@
         document.getElementById('webchat')
       );
 
-      console.log('Trace - Bot rendered for', incidentId);
+      console.log('Trace - Bot rendered for incident:', incidentId);
+      lastIncidentId = incidentId;
     }
 
     async function cleanUpChat() {
@@ -136,6 +150,7 @@
       document.getElementById('container').appendChild(newWebchat);
     }
 
+    // Handle OpenFrame messaging from ServiceNow
     window.addEventListener("message", async (event) => {
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
@@ -164,10 +179,6 @@
           incidentId
         };
 
-        const isNewIncident = incidentId !== lastIncidentId;
-        lastIncidentId = incidentId;
-
-        console.log(`Trace - ${isNewIncident ? "New" : "Restarted"} chat for Incident ID: ${incidentId}`);
         await startWebChat(payload);
 
       } catch (e) {
