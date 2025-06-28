@@ -63,7 +63,7 @@
       let conversationId = cachedData.conversationId;
       const tokenTimestamp = cachedData.tokenTimestamp || 0;
 
-      const isOldIncident = incidentId === lastIncidentId;
+      const isOldIncident = incidentId !== lastIncidentId;
       const isTokenValid = token && (Date.now() - tokenTimestamp < TOKEN_EXPIRY_TIME);
 
       // CASE: Switching to a new incident tab — always get a fresh token
