@@ -55,7 +55,9 @@
       let token, directLineURL, conversationId;
       let sendStartConversation = true;
 
-      if (cache.token && cache.directLineURL && isTokenValid(cache.timestamp)) {
+      const isTokenStillValid = cache.timestamp && (Date.now() - cache.timestamp < TOKEN_EXPIRATION_MS);
+
+      if (cache.token && cache.directLineURL && isTokenStillValid) {
         console.log("♻️ Using cached token for", incidentId);
         token = cache.token;
         directLineURL = cache.directLineURL;
@@ -81,17 +83,21 @@
         ]);
       }
 
-      const sessionConversationId = sessionStorage['conversationId'];
-      if (sessionConversationId) {
-        console.log("Re-Start");
+      if (!isTokenStillValid) {
+        sessionStorage.removeItem('conversationId');
+        conversationId = null;
+      }
+
+      if (conversationId && isTokenStillValid) {
+        console.log("♻️ Reusing previous session");
         directLine = WebChat.createDirectLine({
           domain: new URL('v3/directline', directLineURL),
           token,
-          conversationId: sessionConversationId,
+          conversationId,
           watermark: 1
         });
       } else {
-        console.log("Start");
+        console.log("🆕 Starting fresh session");
         directLine = WebChat.createDirectLine({
           domain: new URL('v3/directline', directLineURL),
           token,
@@ -148,16 +154,26 @@
 
     window.addEventListener("message", (event) => {
       try {
-        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        const parsedData = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        const data = typeof parsedData === 'string' ? JSON.parse(parsedData) : parsedData;
+
         console.log("📬 Message received:", data);
 
         if (data?.eventName === "openframe_communication" || data?.eventName === "openframe_hidden") {
-          if (data?.eventName === "openframe_communication") {
-            const parsed = JSON.parse(data.args);
-            incidentId = parsed.recordId || null;
+          let parsedArgs = {};
+          if (data?.args) {
+            try {
+              parsedArgs = typeof data.args === 'string' ? JSON.parse(data.args) : data.args;
+            } catch (e) {
+              console.warn("⚠️ Failed to parse args:", e);
+            }
+          }
 
-            if (!incidentId && parsed.url) {
-              const match = parsed.url?.match(/incident\/([a-f0-9]+)/i);
+          if (data?.eventName === "openframe_communication") {
+            incidentId = parsedArgs.recordId || null;
+
+            if (!incidentId && parsedArgs.url) {
+              const match = parsedArgs.url?.match(/incident\/([a-f0-9]+)/i);
               if (match) incidentId = match[1];
             }
           }
@@ -165,6 +181,11 @@
           if (data?.eventName === "openframe_hidden") {
             console.warn("🔒 Frame hidden, falling back to last incident.");
             incidentId = lastIncidentId;
+          }
+
+          if (!incidentId) {
+            console.error("❌ No incident ID found.");
+            return;
           }
 
           const payload = {
@@ -207,7 +228,7 @@
       }
     });
 
-    console.log("🕒 Waiting for ServiceNow context...");
+    console.log("⏲️ Waiting for ServiceNow context...");
   </script>
 </body>
 </html>
