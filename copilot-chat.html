@@ -36,7 +36,6 @@
   <script>
     const tokenEndpointURL = 'https://ac9995b4c763e323b7d7f36b8dfee2.07.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview';
     const apiVersion = '2022-03-01-preview';
-    const settingsEndpointURL = 'https://ac9995b4c763e323b7d7f36b8dfee2.07.environment.api.powerplatform.com/';
     const TOKEN_EXPIRATION_MS = 25 * 60 * 1000;
 
     let directLine = null;
@@ -44,66 +43,47 @@
     let lastIncidentId = null;
     let incidentId = null;
 
-    function getIncidentSessionMap() {
-      const stored = sessionStorage.getItem('incidentSessions');
-      return stored ? JSON.parse(stored) : {};
-    }
-
-    function saveIncidentSession(incidentId, data) {
-      const all = getIncidentSessionMap();
-      all[incidentId] = data;
-      sessionStorage.setItem('incidentSessions', JSON.stringify(all));
-    }
-
     function isTokenValid(timestamp) {
       return Date.now() - timestamp < TOKEN_EXPIRATION_MS;
     }
 
-    async function fetchTokenAndDomain() {
-      const [directLineURL, token] = await Promise.all([
-        fetch(new URL(`/powervirtualagents/regionalchannelsettings?api-version=${apiVersion}`, settingsEndpointURL))
-          .then(response => {
-            if (!response.ok) throw new Error('Failed to retrieve regional channel settings.');
-            return response.json();
-          })
-          .then(({ channelUrlsById: { directline } }) => directline),
-        fetch(tokenEndpointURL)
-          .then(response => {
-            if (!response.ok) throw new Error('Failed to retrieve Direct Line token.');
-            return response.json();
-          })
-          .then(({ token }) => token)
-      ]);
-
-      return {
-        token,
-        directLineURL,
-        timestamp: Date.now()
-      };
-    }
-
     async function startWebChat(contextPayload) {
+      const incidentId = contextPayload.incidentId;
+      const cacheKey = `incident-${incidentId}`;
+      const cache = JSON.parse(sessionStorage.getItem(cacheKey) || '{}');
+
+      let token, directLineURL, conversationId;
+      let sendStartConversation = true;
+
+      if (cache.token && cache.directLineURL && isTokenValid(cache.timestamp)) {
+        console.log("\u267B\uFE0F Using cached token for", incidentId);
+        token = cache.token;
+        directLineURL = cache.directLineURL;
+        conversationId = cache.conversationId;
+        sendStartConversation = false;
+      } else {
+        console.log("\uD83D\uDD01 Fetching new token and DirectLine URL for", incidentId);
+
+        [directLineURL, token] = await Promise.all([
+          fetch(new URL(`/powervirtualagents/regionalchannelsettings?api-version=${apiVersion}`, tokenEndpointURL))
+            .then(response => {
+              if (!response.ok) throw new Error('Failed to retrieve regional channel settings.');
+              return response.json();
+            })
+            .then(({ channelUrlsById: { directline } }) => directline),
+
+          fetch(tokenEndpointURL)
+            .then(response => {
+              if (!response.ok) throw new Error('Failed to retrieve Direct Line token.');
+              return response.json();
+            })
+            .then(({ token }) => token)
+        ]);
+      }
+
       if (connectionSub) {
         connectionSub.unsubscribe();
         connectionSub = null;
-      }
-
-      const sessions = getIncidentSessionMap();
-      const sessionData = sessions[contextPayload.incidentId];
-      let token, directLineURL, conversationId, timestamp;
-      let sendStartConversation = true;
-
-      if (sessionData && isTokenValid(sessionData.timestamp)) {
-        console.log("Trace - Using valid session from cache");
-        ({ token, directLineURL, conversationId, timestamp } = sessionData);
-        sendStartConversation = false;
-      } else {
-        console.log("Trace - Fetching new session token");
-        const newSession = await fetchTokenAndDomain();
-        token = newSession.token;
-        directLineURL = newSession.directLineURL;
-        timestamp = newSession.timestamp;
-        conversationId = null;
       }
 
       directLine = window.WebChat.createDirectLine({
@@ -112,42 +92,39 @@
         ...(conversationId && { conversationId })
       });
 
-      window.WebChat.renderWebChat(
-        {
-          directLine,
-          userID: 'user_1',
-          locale: 'en',
-          styleOptions: { hideUploadButton: false }
-        },
-        document.getElementById('webchat')
-      );
+      window.WebChat.renderWebChat({
+        directLine,
+        userID: 'user_1',
+        locale: 'en',
+        styleOptions: { hideUploadButton: false }
+      }, document.getElementById('webchat'));
 
       connectionSub = directLine.connectionStatus$.subscribe({
         next(status) {
           if (status === 2) {
             const updatedConversationId = directLine.conversationId;
 
-            saveIncidentSession(contextPayload.incidentId, {
+            sessionStorage.setItem(cacheKey, JSON.stringify({
               token,
               directLineURL,
               conversationId: updatedConversationId,
-              timestamp
-            });
+              timestamp: Date.now()
+            }));
+
+            sessionStorage['conversationId'] = updatedConversationId;
 
             if (sendStartConversation) {
-              sessionStorage['conversationId'] = directLine.conversationId;
               directLine.postActivity({
-                localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                locale,
                 type: 'event',
                 name: 'startConversation',
+                from: { id: 'user_1' },
                 value: {
                   incidentId: contextPayload.incidentId,
                   localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
                   locale: 'en'
                 }
               }).subscribe(() => {
-                console.log("Trace - startConversation sent for", contextPayload.incidentId);
+                console.log("\uD83D\uDCE4 startConversation sent for", contextPayload.incidentId);
               });
             }
 
@@ -160,7 +137,7 @@
     window.addEventListener("message", (event) => {
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-        console.log("Trace - message received", data);
+        console.log("\uD83D\uDCEC Message received:", data);
 
         if (data?.eventName === "openframe_communication" || data?.eventName === "openframe_hidden") {
           if (data?.eventName === "openframe_communication") {
@@ -169,14 +146,12 @@
 
             if (!incidentId && parsed.url) {
               const match = parsed.url?.match(/incident\/([a-f0-9]+)/i);
-              if (match) {
-                incidentId = match[1];
-              }
+              if (match) incidentId = match[1];
             }
           }
 
           if (data?.eventName === "openframe_hidden") {
-            console.warn("Trace - OpenFrame hidden. Reusing last incident.");
+            console.warn("\uD83D\uDD12 Frame hidden, falling back to last incident.");
             incidentId = lastIncidentId;
           }
 
@@ -191,11 +166,7 @@
 
             if (connectionSub) connectionSub.unsubscribe();
             if (directLine?.end) {
-              try {
-                directLine.end();
-              } catch (e) {
-                console.warn("Error ending DirectLine", e);
-              }
+              try { directLine.end(); } catch (e) { console.warn("Error ending DirectLine", e); }
               directLine = null;
             }
 
@@ -208,7 +179,8 @@
 
             startWebChat(payload);
           } else {
-            console.log(`Trace - Same incident ID (${incidentId}), resuming chat`);
+            console.log(`\u2705 Same incident (${incidentId}) — reusing session`);
+
             const oldWebchat = document.getElementById('webchat');
             if (oldWebchat) oldWebchat.remove();
 
@@ -220,11 +192,11 @@
           }
         }
       } catch (e) {
-        console.error("Trace - Failed to handle message", e);
+        console.error("\u274C Failed to process message:", e);
       }
     });
 
-    console.log("Trace - Waiting for ServiceNow context...");
+    console.log("\uD83D\uDD52 Waiting for ServiceNow context...");
   </script>
 </body>
 </html>
