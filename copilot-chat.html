@@ -1,175 +1,205 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <title>Copilot Chat</title>
-    <script src="https://cdn.botframework.com/botframework-webchat/latest/webchat.js"></script>
-    <style>
-      html, body {
-        height: 100%;
-        margin: 0;
-        font-family: Segoe UI, sans-serif;
+<head>
+  <meta charset="UTF-8" />
+  <title>Copilot Chat</title>
+  <script src="https://cdn.botframework.com/botframework-webchat/latest/webchat.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      font-family: 'Segoe UI', sans-serif;
+    }
+
+    #container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      width: 100%;
+    }
+
+    #webchat {
+      flex: 1;
+      width: 100%;
+      overflow: hidden;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="webchat"></div>
+  </div>
+
+  <script>
+    const tokenEndpointURL = 'https://ac9995b4c763e323b7d7f36b8dfee2.07.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview';
+    const apiVersion = '2022-03-01-preview';
+    const settingsEndpointURL = 'https://ac9995b4c763e323b7d7f36b8dfee2.07.environment.api.powerplatform.com/powervirtualagents/';
+    
+    let directLine = null;
+    let connectionSub = null;
+    let lastIncidentId = null;
+    let incidentId = null;
+
+    async function getDirectLineConfig() {
+      let directLineURL, token;
+
+      if (!sessionStorage['token']) {
+        [directLineURL, token] = await Promise.all([
+          fetch(new URL(`/powervirtualagents/regionalchannelsettings?api-version=${apiVersion}`, settingsEndpointURL))
+            .then(response => {
+              if (!response.ok) throw new Error('Failed to retrieve regional channel settings.');
+              return response.json();
+            })
+            .then(({ channelUrlsById: { directline } }) => directline),
+          fetch(tokenEndpointURL)
+            .then(response => {
+              if (!response.ok) throw new Error('Failed to retrieve Direct Line token.');
+              return response.json();
+            })
+            .then(({ token }) => token)
+        ]);
+
+        sessionStorage['token'] = token;
+        sessionStorage['directLineURL'] = directLineURL;
+      } else {
+        token = sessionStorage['token'];
+        directLineURL = sessionStorage['directLineURL'];
       }
-      #banner {
-        align-items: center;
-        background-color: #001931;
-        display: flex;
-        height: 50px;
-        color: white;
-        padding: 0 20px;
+
+      return { token, directLineURL };
+    }
+
+    async function startWebChat(contextPayload) {
+      if (connectionSub) {
+        connectionSub.unsubscribe();
+        connectionSub = null;
       }
-      #clipboard-prompts {
-        padding: 10px;
-        background: #f4f4f4;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
+
+      const { token, directLineURL } = await getDirectLineConfig();
+      const conversationId = sessionStorage['conversationId'];
+      const watermark = sessionStorage['watermark'];
+
+      if (conversationId) {
+        console.log("Trace - Reusing conversation");
+        directLine = window.WebChat.createDirectLine({
+          token,
+          domain: new URL('v3/directline', directLineURL),
+          conversationId,
+          watermark
+        });
+      } else {
+        console.log("Trace - Starting new conversation");
+        directLine = window.WebChat.createDirectLine({
+          token,
+          domain: new URL('v3/directline', directLineURL)
+        });
       }
-      #clipboard-prompts button {
-        padding: 8px 12px;
-        background-color: #001931;
-        color: white;
-        border: none;
-        border-radius: 6px;
-        cursor: pointer;
-      }
-      #webchat {
-        height: calc(100% - 100px);
-        overflow: hidden;
-        position: fixed;
-        top: 100px;
-        width: 100%;
-      }
-    </style>
-  </head>
-  <body>
-    <div id="banner">
-      <h1>Copilot Assistant</h1>
-    </div>
-    <div id="clipboard-prompts"></div>
-    <div id="webchat" role="main"></div>
 
-    <script>
-      (async function () {
-        const styleOptions = {
-          hideUploadButton: true,
-          botAvatarInitials: 'BF',
-          botAvatarBackgroundColor: '#001931',
-          userAvatarBackgroundColor: 'gold',
-          userAvatarInitials: 'You'
-        };
+      window.WebChat.renderWebChat(
+        {
+          directLine,
+          userID: 'user_1',
+          locale: 'en',
+          styleOptions: { hideUploadButton: false }
+        },
+        document.getElementById('webchat')
+      );
 
-        const incidentId = new URLSearchParams(window.location.search).get("incidentId") || "default_incident";
-        const cacheKey = `chat_${incidentId}`;
-        const tokenEndpointURL = new URL(
-          'https://ac9995b4c763e323b7d7f36b8dfee2.07.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview'
-        );
-        const apiVersion = tokenEndpointURL.searchParams.get('api-version');
-        const locale = document.documentElement.lang || 'en';
-        const watermark = 1;
-
-        let token, directLineURL;
-
-        const cache = JSON.parse(sessionStorage.getItem(cacheKey) || '{}');
-
-        if (!cache.token || !cache.directLineURL) {
-          console.log("🔁 Fetching new token and DirectLine URL for", incidentId);
-
-          [directLineURL, token] = await Promise.all([
-            fetch(new URL(`/powervirtualagents/regionalchannelsettings?api-version=${apiVersion}`, tokenEndpointURL))
-              .then(response => {
-                if (!response.ok) throw new Error('Failed to retrieve regional channel settings.');
-                return response.json();
-              })
-              .then(({ channelUrlsById: { directline } }) => directline),
-            fetch(tokenEndpointURL)
-              .then(response => {
-                if (!response.ok) throw new Error('Failed to retrieve Direct Line token.');
-                return response.json();
-              })
-              .then(({ token }) => token)
-          ]);
-
-          sessionStorage.setItem(cacheKey, JSON.stringify({
-            token,
-            directLineURL
-          }));
-        } else {
-          token = cache.token;
-          directLineURL = cache.directLineURL;
-        }
-
-        const conversationId = cache.conversationId;
-
-        let directLine;
-        if (conversationId) {
-          console.log("♻️ Rehydrating chat for", incidentId);
-          directLine = WebChat.createDirectLine({
-            domain: new URL('v3/directline', directLineURL),
-            token,
-            conversationId,
-            watermark
-          });
-        } else {
-          console.log("🆕 Starting new conversation for", incidentId);
-          directLine = WebChat.createDirectLine({
-            domain: new URL('v3/directline', directLineURL),
-            token,
-            watermark
-          });
-        }
-
-        const subscription = directLine.connectionStatus$.subscribe({
-          next(value) {
-            if (value === 2) {
-              if (!conversationId && directLine.conversationId) {
-                const updated = JSON.parse(sessionStorage.getItem(cacheKey) || '{}');
-                updated.conversationId = directLine.conversationId;
-                sessionStorage.setItem(cacheKey, JSON.stringify(updated));
-              }
-
-              directLine.postActivity({
+      connectionSub = directLine.connectionStatus$.subscribe({
+        next(status) {
+          if (status === 2) {
+            sessionStorage['conversationId'] = directLine.conversationId;
+            directLine.postActivity({
+              type: 'event',
+              name: 'startConversation',
+              from: { id: 'user_1' },
+              value: {
+                incidentId: contextPayload.incidentId,
                 localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                locale,
-                name: 'startConversation',
-                type: 'event'
-              }).subscribe();
+                locale: 'en'
+              }
+            }).subscribe(() => {
+              console.log("Trace - startConversation event sent", contextPayload);
+            });
 
-              subscription.unsubscribe();
+            connectionSub.unsubscribe();
+          }
+        }
+      });
+    }
+
+    window.addEventListener("message", (event) => {
+      try {
+        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        console.log("Trace - message received", data);
+
+        if (data?.eventName === "openframe_communication" || data?.eventName === "openframe_hidden") {
+          if(data?.eventName === "openframe_communication"){
+            const parsed = JSON.parse(data.args);
+            incidentId = parsed.recordId || null;
+
+            if (!incidentId && parsed.url) {
+              const match = parsed.url?.match(/incident\/([a-f0-9]+)/i);
+              if (match) {
+                incidentId = match[1];
+              }
             }
           }
-        });
 
-        WebChat.renderWebChat(
-          {
-            directLine,
-            locale,
-            styleOptions
-          },
-          document.getElementById('webchat')
-        );
+          if (data?.eventName === "openframe_hidden") {
+            console.warn("Trace - No incident ID found or hidden, using last known.");
+            incidentId = lastIncidentId;
+          }
 
-        // Inject Prompt Buttons
-        const promptMessages = [
-          "What can you help me with?",
-          "Show me the incident details.",
-          "Reset the conversation.",
-          "I need help with a ticket."
-        ];
-        const clipboardContainer = document.getElementById('clipboard-prompts');
-        promptMessages.forEach(msg => {
-          const btn = document.createElement('button');
-          btn.innerText = msg;
-          btn.onclick = () => {
-            directLine.postActivity({
-              type: 'message',
-              from: { id: 'user' },
-              text: msg
-            }).subscribe();
+          const payload = {
+            locale: 'en',
+            localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            incidentId: incidentId
           };
-          clipboardContainer.appendChild(btn);
-        });
-      })();
-    </script>
-  </body>
+
+          if (incidentId !== lastIncidentId) {
+            lastIncidentId = incidentId;
+
+            if (connectionSub) {
+              connectionSub.unsubscribe();
+              connectionSub = null;
+            }
+
+            if (directLine && directLine.end) {
+              try {
+                directLine.end();
+              } catch (e) {
+                console.warn("Error ending DirectLine", e);
+              }
+              directLine = null;
+            }
+
+            document.getElementById('webchat').remove();
+            const newWebchat = document.createElement('div');
+            newWebchat.id = 'webchat';
+            document.getElementById('container').appendChild(newWebchat);
+
+            sessionStorage.removeItem('conversationId'); // Clear previous conversation when incident changes
+            startWebChat(payload);
+          } else {
+            console.log(`Trace - Incident ID (${incidentId}) — continuing chat`);
+            document.getElementById('webchat').remove();
+            const newWebchat = document.createElement('div');
+            newWebchat.id = 'webchat';
+            document.getElementById('container').appendChild(newWebchat);
+
+            startWebChat(payload);
+          }
+        }
+      } catch (e) {
+        console.error("Trace - Failed to handle OpenFrame message", e);
+      }
+    });
+
+    console.log("Trace - Waiting for ServiceNow context...");
+  </script>
+</body>
 </html>
