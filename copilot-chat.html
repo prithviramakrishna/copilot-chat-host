@@ -135,6 +135,7 @@
             });
 
             if (sendStartConversation) {
+              sessionStorage['conversationId'] = directLine.conversationId;
               directLine.postActivity({
                 type: 'event',
                 name: 'startConversation',
