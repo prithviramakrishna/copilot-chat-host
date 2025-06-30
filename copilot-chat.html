@@ -1,111 +1,175 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Copilot Chat</title>
-  <script src="https://cdn.botframework.com/botframework-webchat/latest/webchat.js"></script>
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      width: 100%;
-      overflow: hidden;
-      font-family: 'Segoe UI', sans-serif;
-    }
-
-    #webchat {
-      height: 100%;
-      width: 100%;
-      overflow: hidden;
-    }
-  </style>
-</head>
-<body>
-  <div id="webchat"></div>
-
-  <script>
-    const TOKEN_EXPIRY_MS = 29 * 60 * 1000;
-    const apiVersion = '2022-03-01-preview';
-    const botId = 'cr5d4_agent1';
-    const tokenEndpoint = `https://ac9995b4c763e323b7d7f36b8dfee2.07.environment.api.powerplatform.com/powervirtualagents/botsbyschema/${botId}/directline/token?api-version=${apiVersion}`;
-    const settingsEndpoint = `https://ac9995b4c763e323b7d7f36b8dfee2.07.environment.api.powerplatform.com/powervirtualagents/regionalchannelsettings?api-version=${apiVersion}`;
-
-    let directLine, connectionSub;
-
-    async function getNewTokenAndDomain() {
-      const [tokenRes, settingsRes] = await Promise.all([
-        fetch(tokenEndpoint).then(r => r.json()),
-        fetch(settingsEndpoint).then(r => r.json())
-      ]);
-      const token = tokenRes.token;
-      const domain = new URL('v3/directline', settingsRes.channelUrlsById.directline).toString();
-      return { token, domain, tokenTimestamp: Date.now() };
-    }
-
-    async function startWebChat(incidentId) {
-      const cacheKey = `chat_${incidentId}`;
-      const cache = JSON.parse(sessionStorage.getItem(cacheKey) || '{}');
-      let { token, domain, tokenTimestamp, conversationId } = cache;
-      const isTokenValid = token && (Date.now() - (tokenTimestamp || 0) < TOKEN_EXPIRY_MS);
-
-      // If token is invalid or missing, fetch a new one
-      if (!isTokenValid || !token || !domain) {
-        const fresh = await getNewTokenAndDomain();
-        token = fresh.token;
-        domain = fresh.domain;
-        tokenTimestamp = fresh.tokenTimestamp;
-        conversationId = null;
-        sessionStorage.setItem(cacheKey, JSON.stringify({ token, domain, tokenTimestamp }));
-        console.log("🔁 New token fetched for", incidentId);
-      } else {
-        console.log("✅ Reusing token for", incidentId);
+  <head>
+    <meta charset="utf-8">
+    <title>Copilot Chat</title>
+    <script src="https://cdn.botframework.com/botframework-webchat/latest/webchat.js"></script>
+    <style>
+      html, body {
+        height: 100%;
+        margin: 0;
+        font-family: Segoe UI, sans-serif;
       }
+      #banner {
+        align-items: center;
+        background-color: #001931;
+        display: flex;
+        height: 50px;
+        color: white;
+        padding: 0 20px;
+      }
+      #clipboard-prompts {
+        padding: 10px;
+        background: #f4f4f4;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      #clipboard-prompts button {
+        padding: 8px 12px;
+        background-color: #001931;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      #webchat {
+        height: calc(100% - 100px);
+        overflow: hidden;
+        position: fixed;
+        top: 100px;
+        width: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="banner">
+      <h1>Copilot Assistant</h1>
+    </div>
+    <div id="clipboard-prompts"></div>
+    <div id="webchat" role="main"></div>
 
-      // Clean up before creating new chat
-      if (connectionSub) connectionSub.unsubscribe();
-      if (directLine?.end) directLine.end();
-
-      directLine = WebChat.createDirectLine({
-        token,
-        domain,
-        ...(conversationId ? { conversationId } : {})
-      });
-
-      connectionSub = directLine.connectionStatus$.subscribe(status => {
-        if (status === 2) {
-          if (!conversationId && directLine.conversationId) {
-            const updated = JSON.parse(sessionStorage.getItem(cacheKey) || '{}');
-            updated.conversationId = directLine.conversationId;
-            sessionStorage.setItem(cacheKey, JSON.stringify(updated));
-          }
-
-          directLine.postActivity({
-            type: 'event',
-            name: 'startConversation',
-            from: { id: 'user' },
-            value: { incidentId }
-          }).subscribe();
-        }
-      });
-
-      WebChat.renderWebChat({
-        directLine,
-        locale: 'en',
-        userID: 'user',
-        styleOptions: {
-          hideUploadButton: false,
+    <script>
+      (async function () {
+        const styleOptions = {
+          hideUploadButton: true,
           botAvatarInitials: 'BF',
           botAvatarBackgroundColor: '#001931',
           userAvatarBackgroundColor: 'gold',
           userAvatarInitials: 'You'
-        }
-      }, document.getElementById('webchat'));
-    }
+        };
 
-    // Example incidentId — replace this with real OpenFrame context message handling
-    const incidentId = new URLSearchParams(window.location.search).get("incidentId") || "default_incident_123";
-    startWebChat(incidentId);
-  </script>
-</body>
+        const incidentId = new URLSearchParams(window.location.search).get("incidentId") || "default_incident";
+        const cacheKey = `chat_${incidentId}`;
+        const tokenEndpointURL = new URL(
+          'https://ac9995b4c763e323b7d7f36b8dfee2.07.environment.api.powerplatform.com/powervirtualagents/botsbyschema/cr5d4_agent1/directline/token?api-version=2022-03-01-preview'
+        );
+        const apiVersion = tokenEndpointURL.searchParams.get('api-version');
+        const locale = document.documentElement.lang || 'en';
+        const watermark = 1;
+
+        let token, directLineURL;
+
+        const cache = JSON.parse(sessionStorage.getItem(cacheKey) || '{}');
+
+        if (!cache.token || !cache.directLineURL) {
+          console.log("🔁 Fetching new token and DirectLine URL for", incidentId);
+
+          [directLineURL, token] = await Promise.all([
+            fetch(new URL(`/powervirtualagents/regionalchannelsettings?api-version=${apiVersion}`, tokenEndpointURL))
+              .then(response => {
+                if (!response.ok) throw new Error('Failed to retrieve regional channel settings.');
+                return response.json();
+              })
+              .then(({ channelUrlsById: { directline } }) => directline),
+            fetch(tokenEndpointURL)
+              .then(response => {
+                if (!response.ok) throw new Error('Failed to retrieve Direct Line token.');
+                return response.json();
+              })
+              .then(({ token }) => token)
+          ]);
+
+          sessionStorage.setItem(cacheKey, JSON.stringify({
+            token,
+            directLineURL
+          }));
+        } else {
+          token = cache.token;
+          directLineURL = cache.directLineURL;
+        }
+
+        const conversationId = cache.conversationId;
+
+        let directLine;
+        if (conversationId) {
+          console.log("♻️ Rehydrating chat for", incidentId);
+          directLine = WebChat.createDirectLine({
+            domain: new URL('v3/directline', directLineURL),
+            token,
+            conversationId,
+            watermark
+          });
+        } else {
+          console.log("🆕 Starting new conversation for", incidentId);
+          directLine = WebChat.createDirectLine({
+            domain: new URL('v3/directline', directLineURL),
+            token,
+            watermark
+          });
+        }
+
+        const subscription = directLine.connectionStatus$.subscribe({
+          next(value) {
+            if (value === 2) {
+              if (!conversationId && directLine.conversationId) {
+                const updated = JSON.parse(sessionStorage.getItem(cacheKey) || '{}');
+                updated.conversationId = directLine.conversationId;
+                sessionStorage.setItem(cacheKey, JSON.stringify(updated));
+              }
+
+              directLine.postActivity({
+                localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                locale,
+                name: 'startConversation',
+                type: 'event'
+              }).subscribe();
+
+              subscription.unsubscribe();
+            }
+          }
+        });
+
+        WebChat.renderWebChat(
+          {
+            directLine,
+            locale,
+            styleOptions
+          },
+          document.getElementById('webchat')
+        );
+
+        // Inject Prompt Buttons
+        const promptMessages = [
+          "What can you help me with?",
+          "Show me the incident details.",
+          "Reset the conversation.",
+          "I need help with a ticket."
+        ];
+        const clipboardContainer = document.getElementById('clipboard-prompts');
+        promptMessages.forEach(msg => {
+          const btn = document.createElement('button');
+          btn.innerText = msg;
+          btn.onclick = () => {
+            directLine.postActivity({
+              type: 'message',
+              from: { id: 'user' },
+              text: msg
+            }).subscribe();
+          };
+          clipboardContainer.appendChild(btn);
+        });
+      })();
+    </script>
+  </body>
 </html>
