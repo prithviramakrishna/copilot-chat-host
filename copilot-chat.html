@@ -137,9 +137,10 @@
             if (sendStartConversation) {
               sessionStorage['conversationId'] = directLine.conversationId;
               directLine.postActivity({
+                localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                locale,
                 type: 'event',
                 name: 'startConversation',
-                from: { id: 'user_1' },
                 value: {
                   incidentId: contextPayload.incidentId,
                   localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
