@@ -112,8 +112,6 @@
             }));
 
             sessionStorage['conversationId'] = updatedConversationId;
-
-            if (sendStartConversation) {
               directLine.postActivity({
                 type: 'event',
                 name: 'startConversation',
@@ -126,8 +124,6 @@
               }).subscribe(() => {
                 console.log("\uD83D\uDCE4 startConversation sent for", contextPayload.incidentId);
               });
-            }
-
             connectionSub.unsubscribe();
           }
         }
