@@ -118,12 +118,9 @@
             }));
 
             sessionStorage['conversationId'] = updatedConversationId;
-
-            if (sendStartConversation) {
               directLine.postActivity({
                 type: 'event',
                 name: 'startConversation',
-                from: { id: 'user_1' },
                 value: {
                   incidentId: contextPayload.incidentId,
                   localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -132,8 +129,6 @@
               }).subscribe(() => {
                 console.log("📤 startConversation sent for", contextPayload.incidentId);
               });
-            }
-
             connectionSub.unsubscribe();
           }
         }
