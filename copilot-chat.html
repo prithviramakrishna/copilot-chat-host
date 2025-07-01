@@ -123,7 +123,6 @@
               directLine.postActivity({
                 type: 'event',
                 name: 'startConversation',
-                from: { id: 'user_1' },
                 value: {
                   incidentId: contextPayload.incidentId,
                   localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -143,11 +142,7 @@
         directLine,
         locale: 'en',
         styleOptions: {
-          hideUploadButton: true,
-          botAvatarInitials: 'BF',
-          botAvatarBackgroundColor: 'rgb(0,25,49)',
-          userAvatarBackgroundColor: 'rgba(255,215,0)',
-          userAvatarInitials: 'You'
+          hideUploadButton: true
         }
       }, document.getElementById('webchat'));
     }
